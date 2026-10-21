@@ -21,3 +21,7 @@ Die Adresse in Safari öffnen → Teilen → **Zum Home-Bildschirm**.
 
 ## Einladen
 Zahnrad → *Personen* → E-Mail-Adresse der Person eingeben. Sie meldet sich mit genau dieser Adresse an (Konto vorher oder nachher anlegen) und sieht dann nur die Listen, zu denen sie eingeladen ist.
+
+## Update: Rechnungen
+
+Einmalig im Supabase-Projekt den Inhalt von `schema_v2.sql` im SQL Editor ausführen. Danach gibt es den Bereich Rechnungen. Die bestehenden Listen bleiben erhalten.
