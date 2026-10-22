@@ -186,6 +186,10 @@ button:disabled{cursor:default}
 .person{display:flex;align-items:center;gap:10px;min-height:40px;border-top:1px solid var(--line)}
 .person .pn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
 .person .tag{font-size:12px;color:var(--ink-2)}
+.acc-person{border-top:1px solid var(--line);padding:2px 0 6px}
+.acc-lists{display:grid;gap:2px;padding:0 0 0 4px}
+.acc-row{display:flex;align-items:center;gap:10px;min-height:36px;font-size:14px}
+.acc-row input{width:18px;height:18px;accent-color:var(--ink);flex:none}
 .caution{margin:8px 0 0;padding:8px 10px;border-radius:10px;background:var(--surface);border:1px solid var(--line);font-size:12.5px;color:var(--ink-2)}
 .acct{display:grid;gap:2px;padding:4px 0 8px}
 .acct b{font-weight:600;overflow-wrap:anywhere}
@@ -204,7 +208,7 @@ button:disabled{cursor:default}
 .add{background:var(--accent);color:var(--on-accent)}
 .ibtn:active,.add:active{transform:scale(.95)}
 .add:disabled,.ibtn:disabled{opacity:.5}
-.nav{margin:8px auto 8px;width:100%;max-width:420px;border-radius:999px;padding:5px;background:var(--nav);
+.nav{margin:10px auto calc(14px + env(safe-area-inset-bottom,0px));width:100%;max-width:420px;border-radius:999px;padding:5px;background:var(--nav);
   backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);
   box-shadow:0 10px 26px rgba(40,45,15,.35),inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.07)}
 .navin{position:relative;display:flex}
@@ -541,7 +545,7 @@ var state = {
   listId: null, view: 'list', sheet: null,
   mode: 'loading', loaded: false, authed: false,
   me: {id: null, email: ''},
-  confirmClear: false, confirmDel: false, confirmExp: null
+  confirmClear: false, confirmDel: false, confirmExp: null, accessExtra: []
 };
 var sb = null, chan = null, reloadT = null, signup = false;
 var focusFn = null, openerSel = null, closing = false, pendingRender = false, sheetHtml = '';
@@ -996,6 +1000,24 @@ function renderAccount(){
     '<section class="set"><h3>Hinweis</h3><p class="tip">Wer die App öffnen darf, sieht alle Listen, zu denen die Person eingeladen ist. Einladen geht in den Einstellungen unter Personen.</p></section>';
 }
 
+function peopleAccessHTML(){
+  var mine = state.lists.filter(function(l){ return l.owner === state.me.id; });
+  if(!mine.length) return '';
+  var emails = state.accessExtra.slice();
+  mine.forEach(function(l){ people(l).forEach(function(p){ if(p !== state.me.email && emails.indexOf(p) < 0) emails.push(p); }); });
+  var h = '<section class="set"><h3>Zugriff auf Märkte</h3>' +
+    '<p class="tip">Hake an, welche Märkte eine Person sehen darf. Neue Märkte schaltest du hier frei, ohne neue Einladung. Die Person sieht sie, sobald sie sich mit ihrer E-Mail-Adresse anmeldet.</p>';
+  emails.forEach(function(p){
+    h += '<div class="acc-person"><div class="person"><span class="pn">' + esc(p) + '</span></div><div class="acc-lists">' + mine.map(function(l){
+      var on = l.members.indexOf(p) >= 0;
+      return '<label class="acc-row"><input type="checkbox" data-list="' + esc(l.id) + '" data-email="' + esc(p) + '"' + (on ? ' checked' : '') + '><span>' + esc(l.name) + '</span></label>';
+    }).join('') + '</div></div>';
+  });
+  if(!emails.length) h += '<p class="tip">Noch niemand eingeladen. Trage unten eine E-Mail-Adresse ein.</p>';
+  h += '<form class="inline-form" id="accessForm" autocomplete="off" style="margin-top:8px"><label class="sr" for="accessEmail">E-Mail-Adresse</label>' +
+    '<input class="field" id="accessEmail" type="email" inputmode="email" autocapitalize="none" placeholder="Person eintragen"><button class="ibtn" type="submit" aria-label="Person hinzufügen">' + PLUS + '</button></form></section>';
+  return h;
+}
 function renderSettings(){
   var l = cur(), h = '';
   if(!l){ main.innerHTML = emptyNoList(); return; }
@@ -1039,6 +1061,7 @@ function renderSettings(){
   }
   h += '</section>';
 
+  h += peopleAccessHTML();
   if(manage){
     h += '<section class="set"><button class="ghost warn" data-act="del-list">' + (state.confirmDel ? 'Wirklich löschen? Mit allen Artikeln und Rechnungen' : 'Liste „' + esc(l.name) + '“ löschen') + '</button></section>';
   }
@@ -1416,6 +1439,12 @@ document.addEventListener('click', function(e){
 
 document.addEventListener('change', function(e){
   var t = e.target, l = cur();
+  if(t.dataset && t.dataset.list){
+    var ll = state.lists.filter(function(x){ return x.id === t.dataset.list; })[0];
+    if(!ll || ll.owner !== state.me.id) return;
+    if(t.checked) store.addMember(ll.id, t.dataset.email); else store.removeMember(ll.id, t.dataset.email);
+    return;
+  }
   if(!l || !canManage(l)) return;
   if(t.id === 'listNameInput'){
     var v = t.value.trim().replace(/\s+/g, ' ');
@@ -1481,6 +1510,7 @@ document.addEventListener('keydown', function(e){
 
 document.addEventListener('submit', function(e){
   var f = e.target;
+  if(main.contains(f) && document.activeElement && main.contains(document.activeElement) && document.activeElement.blur){ document.activeElement.blur(); }
   if(f.id === 'addForm'){
     e.preventDefault();
     var v = input.value;
@@ -1534,6 +1564,15 @@ document.addEventListener('submit', function(e){
     if(people(l0).indexOf(em) >= 0){ flashText('Diese Person ist schon dabei.'); return; }
     focusFn = function(){ return $('#memberEmail'); };
     store.addMember(l0.id, em);
+  } else if(f.id === 'accessForm'){
+    e.preventDefault();
+    var ae = $('#accessEmail');
+    var aem = ae ? ae.value.trim().toLowerCase() : '';
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(aem)){ flashText('Das ist keine gültige E-Mail-Adresse.'); return; }
+    if(ae) ae.blur();
+    if(state.accessExtra.indexOf(aem) < 0 && aem !== state.me.email) state.accessExtra.push(aem);
+    focusFn = function(){ return $('#accessEmail'); };
+    render();
   } else if(f.id === 'authForm'){
     e.preventDefault();
     doAuth();
@@ -1590,7 +1629,7 @@ function onSignedIn(session){
 function onSignedOut(){
   state.authed = false;
   state.me = {id: null, email: ''};
-  state.lists = []; state.items = []; state.expenses = []; state.listId = null;
+  state.lists = []; state.items = []; state.expenses = []; state.listId = null; state.accessExtra = [];
   state.loaded = false; state.view = 'list'; state.sheet = null; state.mode = 'loading';
   if(chan){ try{ sb.removeChannel(chan); }catch(e){} chan = null; }
   $('#authPw').value = '';
