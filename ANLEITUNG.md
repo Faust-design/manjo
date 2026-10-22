@@ -25,3 +25,7 @@ Zahnrad → *Personen* → E-Mail-Adresse der Person eingeben. Sie meldet sich m
 ## Update: Rechnungen
 
 Einmalig im Supabase-Projekt den Inhalt von `schema_v2.sql` im SQL Editor ausführen. Danach gibt es den Bereich Rechnungen. Die bestehenden Listen bleiben erhalten.
+
+## Update: Kassenzettel fotografieren
+
+Einmalig im Supabase-Projekt den Inhalt von `schema_v3.sql` im SQL Editor ausführen. Danach gibt es unter Rechnungen die Tabs Fotografieren, Saldo und Kategorien. Die Erkennung läuft auf dem Gerät. Beim ersten Foto lädt die App die Erkennung nach, das dauert einen Moment.
