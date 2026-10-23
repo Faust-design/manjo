@@ -1,0 +1,11 @@
+{
+  "name": "manjo",
+  "private": true,
+  "description": "Gemeinsame Einkaufslisten mit Route durch den Laden",
+  "scripts": {
+    "test": "node tests/unit.test.js && node tests/smoke.test.js"
+  },
+  "devDependencies": {
+    "jsdom": "^24.1.3"
+  }
+}

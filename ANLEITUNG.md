@@ -20,7 +20,7 @@ Alle Dateien dieses Ordners in ein GitHub-Repo legen und **GitHub Pages** einsch
 Die Adresse in Safari öffnen → Teilen → **Zum Home-Bildschirm**.
 
 ## Einladen
-Zahnrad → *Personen* → E-Mail-Adresse der Person eingeben. Sie meldet sich mit genau dieser Adresse an (Konto vorher oder nachher anlegen) und sieht dann nur die Listen, zu denen sie eingeladen ist.
+Account → *Personen und Freigaben* → E-Mail-Adresse eintragen und die Märkte anhaken, die die Person sehen darf. Es geht keine Mail raus: Die Person meldet sich mit genau dieser Adresse an (Konto vorher oder nachher anlegen) und sieht dann die freigegebenen Märkte.
 
 ## Update: Rechnungen
 
@@ -29,3 +29,22 @@ Einmalig im Supabase-Projekt den Inhalt von `schema_v2.sql` im SQL Editor ausfü
 ## Update: Kassenzettel fotografieren
 
 Einmalig im Supabase-Projekt den Inhalt von `schema_v3.sql` im SQL Editor ausführen. Danach gibt es unter Rechnungen die Tabs Fotografieren, Saldo und Kategorien. Die Erkennung läuft auf dem Gerät. Beim ersten Foto lädt die App die Erkennung nach, das dauert einen Moment.
+
+## Update: Namen, Ausgleich, keine doppelten Artikel
+
+Einmalig im Supabase-Projekt den Inhalt von `schema_v4.sql` im SQL Editor ausführen. Danach:
+
+- Unter Account trägt jede Person ihren Namen ein. Im Saldo steht dann „Kim → Du“ statt der E-Mail-Adresse.
+- Im Saldo gibt es „Ausgleichen“, wenn Geld zurückgezahlt wurde.
+- Doppelte Artikel auf einer Liste verhindert die Datenbank. Schon vorhandene Dubletten werden dabei zusammengeführt.
+
+## Bedienung in Kürze
+
+- **Abhaken:** auf den Kreis tippen oder den Artikel nach rechts wischen.
+- **Bearbeiten:** auf den Namen tippen. Dort lassen sich Name, Menge und Station ändern.
+- **Löschen:** nach links wischen oder im Bearbeiten-Fenster. Ein paar Sekunden lang lässt es sich rückgängig machen.
+- **Mengen:** einfach mit eintippen, etwa „3 Bananen“ oder „Milch 2 l“.
+- **Einkaufsmodus:** der Knopf „Einkaufen“ hält den Bildschirm an und vergrößert die Zeilen.
+- **Ohne Netz:** Artikel und Häkchen werden gespeichert und gesendet, sobald wieder Verbindung besteht.
+- **Märkte:** Reihenfolge und Sichtbarkeit der Tabs stellst du unter Märkte ein (gilt pro Gerät).
+- **Rechnungen** gelten für alle Märkte zusammen. Mit den Chips filterst du auf einen Markt. Ein Tipp auf eine Ausgabe öffnet sie zum Bearbeiten.
