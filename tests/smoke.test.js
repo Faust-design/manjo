@@ -13,7 +13,7 @@ w.HTMLElement.prototype.scrollIntoView = function(){};
 
 // ---- nachgebautes Supabase ----
 const db = {lists: [], list_members: [], items: [], expenses: [], profiles: []};
-const net = {offline: false};
+const net = {offline: false, failExpense: null};
 let n = 0;
 const ME = {id: 'u1', email: 'me@x.de'};
 function q(table){
@@ -29,6 +29,7 @@ function q(table){
     then(res, rej){
       try{
         if(net.offline) return Promise.resolve({data: null, error: {message: 'TypeError: Failed to fetch'}}).then(res, rej);
+        if(o.t === 'expenses' && o.op === 'insert' && net.failExpense) return Promise.resolve({data: null, error: net.failExpense}).then(res, rej);
         const T = db[o.t]; let data = null, error = null;
         if(o.op === 'insert'){
           const r = Object.assign({id: 'id' + (++n), created_at: new Date(Date.now() + n).toISOString()}, o.row);
@@ -169,6 +170,16 @@ const ok = (c, m) => { count++; if(!c){ fails++; console.log('FAIL ' + m); } els
   // Rechnungen
   nav('bills'); await sleep(30);
   ok(/Fotografieren/.test(mainText()) && /Alle Märkte/.test(mainText()), 'Rechnungen mit Tabs und Markt-Filter');
+  click(Q('[data-act="exp-new"]')); await sleep(30);
+  const mk = Q('#rcList'); mk.value = db.lists[1].id; change(mk); await sleep(20);
+  ok(!!Q('.rc-note'), 'Hinweis, wenn im Markt nur eine Person ist');
+  type(Q('#rcTotal'), '5');
+  net.failExpense = {code: 'PGRST204', message: "Could not find the 'spent_on' column of 'expenses' in the schema cache"};
+  submit(Q('#rcForm')); await sleep(80);
+  ok(!Q('#overlay').hidden && !Q('#rcErr').hidden && /schema_v3/.test(Q('#rcErr').textContent), 'Speicherfehler bleibt im Fenster sichtbar');
+  ok(db.expenses.length === 0 && !/5,00 €/.test(mainText()), 'bei Fehler nichts gespeichert und nichts vorgetäuscht');
+  net.failExpense = null;
+  click(Q('[data-act="close"]')); await sleep(250);
   click(Q('[data-act="exp-new"]')); await sleep(30);
   ok(/Ausgabe eintragen/.test(Q('#sheetTitle').textContent), 'Ausgabe ohne Foto öffnet Formular');
   type(Q('#rcTotal'), '30,00'); type(Q('#rcDesc'), 'Wocheneinkauf');

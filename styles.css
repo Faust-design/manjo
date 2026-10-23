@@ -344,3 +344,5 @@ main .tabs .tab .tn{max-width:none;overflow:hidden;text-overflow:ellipsis}
 @media (max-width: 380px){ main .tabs .tab{font-size:13px;padding:0 6px} }
 .tn .short{display:none}
 @media (max-width: 380px){ main .tabs .tn .long{display:none} main .tabs .tn .short{display:inline} }
+.rc-note{margin:8px 0 0;padding:8px 10px;border-radius:10px;background:var(--bg);border:1px solid var(--line);font-size:13px;color:var(--ink-2)}
+.rc-err{margin:10px 0 0;padding:8px 10px;border-radius:10px;border:1.5px solid var(--danger);color:var(--danger);font-size:13.5px;font-weight:600}

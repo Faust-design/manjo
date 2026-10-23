@@ -220,6 +220,15 @@ function isNetErr(err){
   return (typeof navigator !== 'undefined' && navigator.onLine === false) || /fetch|network|load failed|timed? ?out|abort/i.test(m);
 }
 function needsDbUpdate(err){ return !!err && DB_UPDATE_CODES.indexOf(err.code) >= 0; }
+function errText(err){
+  if(needsDbUpdate(err)){
+    var m = String(err.message || '') + ' ' + String(err.details || '') + ' ' + String(err.hint || '');
+    if(/spent_on|lines/.test(m)) return 'Der Datenbank fehlt noch ein Update. Bitte schema_v3.sql und danach schema_v4.sql in Supabase ausführen.';
+    return 'Der Datenbank fehlt noch ein Update. Bitte schema_v4.sql in Supabase ausführen.';
+  }
+  if(isNetErr(err)) return 'Keine Verbindung. Versuch es gleich nochmal, die Eingaben bleiben stehen.';
+  return 'Speichern hat nicht geklappt: ' + String((err && (err.message || err.details)) || 'unbekannter Fehler');
+}
 function onWriteError(err){
   if(needsDbUpdate(err)) flashText('Datenbank-Update fehlt: Bitte schema_v4.sql in Supabase ausführen.');
   else flashText('Nicht gespeichert. Prüft die Verbindung.');
@@ -403,16 +412,22 @@ var store = {
     state.expenses.push(tmp);
     render();
     return sb.from('expenses').insert(row).then(function(r){
-      if(r.error){ state.expenses = state.expenses.filter(function(e){ return e !== tmp; }); render(); onWriteError(r.error); return false; }
+      if(r.error){ state.expenses = state.expenses.filter(function(e){ return e !== tmp; }); render(); return {ok: false, error: r.error}; }
       scheduleReload(0);
-      return true;
+      return {ok: true};
+    }, function(err){
+      state.expenses = state.expenses.filter(function(e){ return e !== tmp; }); render();
+      return {ok: false, error: err};
     });
   },
   updateExpense: function(id, row){
     var i = state.expenses.findIndex(function(e){ return e.id === id; });
     if(i >= 0) state.expenses[i] = normExp(Object.assign({id: id, created_at: new Date(state.expenses[i].ts).toISOString()}, row));
     render();
-    return sb.from('expenses').update(row).eq('id', id).then(function(r){ if(r.error) onWriteError(r.error); else scheduleReload(0); });
+    return sb.from('expenses').update(row).eq('id', id).then(function(r){
+      scheduleReload(0);
+      return r.error ? {ok: false, error: r.error} : {ok: true};
+    }, function(err){ scheduleReload(0); return {ok: false, error: err}; });
   },
   removeExpense: function(id){
     state.expenses = state.expenses.filter(function(e){ return e.id !== id; });
@@ -722,7 +737,10 @@ function balanceHTML(){
   var lists = billLists(), ex = billExpenses(), L = settleUp(ex, peopleOf(lists)), h = '';
   h += '<p class="tip">' + (L.count ? 'Gesamt ' + money(L.total) + ' bei ' + L.count + (L.count === 1 ? ' Einkauf' : ' Einkäufen') + (state.billMarket === 'all' ? ' in allen Märkten.' : '.') : 'Noch keine Rechnung eingetragen.') + '</p>';
   h += '<section class="set"><h3>Wer schuldet wem</h3>';
-  if(!L.lines.length) h += '<p class="tip">Alles ausgeglichen.</p>';
+  if(!L.lines.length){
+    var solo = ex.filter(function(e){ return e.kind !== 'settle' && e.parts.every(function(p){ return p === e.payer; }); }).length;
+    h += '<p class="tip">Alles ausgeglichen.' + (L.count && solo === L.count ? ' Die bisherigen Einkäufe wurden mit niemandem geteilt, deshalb schuldet keiner etwas. Beim Eintragen legst du unter „Geteilt mit“ fest, wer mitzahlt.' : '') + '</p>';
+  }
   L.lines.forEach(function(x){
     var key = x.from + '|' + x.to + '|' + x.cents, conf = state.confirmSettle === key;
     h += '<div class="settle"><span>' + esc(who(x.from)) + '<span class="arr">→</span>' + esc(who(x.to)) + '</span><b>' + money(x.cents) + '</b>' +
@@ -965,7 +983,8 @@ function rcpBody(r){
     }).join('') + '</select></label>' +
     '<fieldset style="border:0;padding:0;margin:10px 0 0"><legend class="field-l" style="margin-bottom:4px">Geteilt mit</legend><div class="checks">' + ppl.map(function(p){
       return '<label><input type="checkbox" name="rpart" value="' + esc(p) + '"' + (r.parts.indexOf(p) >= 0 ? ' checked' : '') + '>' + esc(who(p)) + '</label>';
-    }).join('') + '</div></fieldset>';
+    }).join('') + '</div></fieldset>' +
+    (ppl.length < 2 ? '<p class="rc-note">In „' + esc(l.name) + '“ bist nur du eingetragen. Die Ausgabe zählt dann in den Kategorien, im Saldo aber nicht, weil niemand mitzahlt. Gib den Markt unter Account frei, dann kannst du hier mit anderen teilen.</p>' : '');
   if(r.mode === 'photo' && r.match.length){
     h += '<h3 class="rc-h">Auf der Liste abhaken</h3><div class="checks">' + r.match.map(function(id){
       var it = findItem(id);
@@ -984,6 +1003,7 @@ function rcpBody(r){
       (diff ? '. Der Rest von ' + money(diff) + ' wird als „Nicht zugeordnet“ gezählt.' : '.') + '</p>';
   }
   h += '<button class="ghost" type="button" data-act="rc-add" style="margin-top:6px">+ Position</button>' +
+    '<p class="rc-err" id="rcErr" role="alert" hidden></p>' +
     '<button class="sheet-btn primary" type="submit" style="margin-top:12px">Speichern</button></form>';
   return h;
 }
@@ -1086,16 +1106,29 @@ function saveRcp(){
   var lines = r.lines.filter(function(x){ return x.n && x.c; }).map(function(x){ return {n: x.n, c: x.c, cat: x.cat}; });
   var row = {list_id: r.list, amount_cents: r.total, description: r.desc.trim() || (r.mode === 'photo' ? 'Kassenzettel' : 'Einkauf'),
              payer_email: r.payer, participants: r.parts.slice(), spent_on: r.date || todayISO(), lines: lines};
-  var msg = money(r.total) + ' gespeichert.';
-  if(r.mode === 'edit') store.updateExpense(r.id, row);
-  else store.addExpense(row);
-  if(r.mode === 'photo'){
-    var ids = r.match.filter(function(id){ return r.matchOn[id]; });
-    ids.forEach(function(id){ var it = findItem(id); if(it && !it.done) store.updateItem(id, {done: true}); });
-    if(ids.length) msg += ' ' + ids.length + (ids.length === 1 ? ' Artikel' : ' Artikel') + ' abgehakt.';
-  }
-  flashText(msg);
-  closeSheet();
+  var others = r.parts.filter(function(p){ return p !== r.payer; });
+  var msg = money(r.total) + ' gespeichert' + (others.length ? ', geteilt mit ' + others.map(function(p){ return p === state.me.email ? 'dir' : who(p); }).join(', ') + '.' : '. Nicht geteilt, deshalb ändert sich der Saldo nicht.');
+  var btn = overlay.querySelector('#rcForm button[type="submit"]'), errEl = $('#rcErr');
+  if(btn){ btn.disabled = true; btn.textContent = 'Speichert …'; }
+  if(errEl) errEl.hidden = true;
+  var job = r.mode === 'edit' ? store.updateExpense(r.id, row) : store.addExpense(row);
+  job.then(function(res){
+    if(state.rcp !== r) return;
+    if(!res || !res.ok){
+      if(btn){ btn.disabled = false; btn.textContent = 'Speichern'; }
+      var e2 = $('#rcErr');
+      if(e2){ e2.textContent = errText(res && res.error); e2.hidden = false; e2.scrollIntoView && e2.scrollIntoView({block: 'nearest'}); }
+      else flashText(errText(res && res.error));
+      return;
+    }
+    if(r.mode === 'photo'){
+      var ids = r.match.filter(function(id){ return r.matchOn[id]; });
+      ids.forEach(function(id){ var it = findItem(id); if(it && !it.done) store.updateItem(id, {done: true}); });
+      if(ids.length) msg += ' ' + ids.length + ' Artikel abgehakt.';
+    }
+    flashText(msg);
+    closeSheet();
+  });
 }
 function doSettle(from, to, cents){
   var lid = null;
@@ -1106,7 +1139,7 @@ function doSettle(from, to, cents){
   }
   if(!lid) return;
   store.addExpense({list_id: lid, amount_cents: cents, description: 'Ausgleich', payer_email: from, participants: [to], kind: 'settle', spent_on: todayISO(), lines: []})
-    .then(function(ok){ if(ok) flashText('Ausgleich über ' + money(cents) + ' eingetragen.'); });
+    .then(function(res){ flashText(res.ok ? 'Ausgleich über ' + money(cents) + ' eingetragen.' : errText(res.error)); });
 }
 function updateImport(){
   var ta = $('#impText'), box = $('#impPrev'), btn = $('#impAdd'), l = cur();
