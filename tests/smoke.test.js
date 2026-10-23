@@ -204,6 +204,7 @@ const ok = (c, m) => { count++; if(!c){ fails++; console.log('FAIL ' + m); } els
   // Ausgabe bearbeiten
   click(Q('[data-act="bill-tab"][data-tab="foto"]')); await sleep(30);
   ok(/Ausgleich/.test(mainText()), 'Ausgleich in der Liste');
+  ok(!!Q('[data-act="photo-gallery"]') && !Q('#rcGallery').hasAttribute('capture') && Q('#rcFile').hasAttribute('capture'), 'Galerie-Knopf ohne Kamerazwang');
   const farbe = QA('[data-act="exp-edit"]').find(b => /Farbe/.test(b.textContent));
   click(farbe); await sleep(30);
   ok(/Ausgabe bearbeiten/.test(Q('#sheetTitle').textContent) && Q('#rcTotal').value === '10,00', 'Tipp auf Ausgabe öffnet Bearbeiten');

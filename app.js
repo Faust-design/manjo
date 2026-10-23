@@ -9,13 +9,14 @@ var TICK = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="
 var XICON = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 var PLUS = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
 var CAMERA = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
+var GALLERY = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M21 16l-5-5-9 9"/></svg>';
 var UP = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg>';
 var DOWN = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
 var EYE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 var EYE_OFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1"/></svg>';
 var NAV_INDEX = {list:0, markets:1, bills:2, settings:3, account:4};
 var DB_UPDATE_CODES = ['42P01', '42703', 'PGRST204', 'PGRST205'];
-var APP_VERSION = '2026-10-23.3';
+var APP_VERSION = '2026-10-23.4';
 var LS_LOG = 'manjo-log';
 /* Kleines Protokoll auf dem Gerät: hilft, Fehler zu finden, die man auf dem Handy nicht sieht */
 function logEvent(kind, msg){
@@ -795,6 +796,7 @@ function photoHTML(){
   var ex = billExpenses().slice().sort(function(a, b){ return (b.spent > a.spent ? 1 : b.spent < a.spent ? -1 : 0) || (b.ts - a.ts); });
   var many = state.billMarket === 'all' && state.lists.length > 1;
   var h = '<button class="sheet-btn primary photo-big" data-act="photo">' + CAMERA + ' Kassenzettel fotografieren</button>' +
+    '<button class="sheet-btn photo-big" data-act="photo-gallery">' + GALLERY + ' Aus Galerie wählen</button>' +
     '<p class="tip">Das Foto bleibt auf deinem Gerät. Du prüfst die erkannten Positionen, bevor etwas gespeichert wird.</p>' +
     '<div class="bhead" style="margin:6px 0 4px"><button class="ghost" data-act="exp-new">Ausgabe ohne Foto</button></div>';
   if(!ex.length) h += '<p class="tip">Noch keine Rechnung eingetragen.</p>';
@@ -1461,8 +1463,8 @@ document.addEventListener('click', function(e){
   } else if(act === 'month'){
     state.month = shiftMonth(state.month, +b.dataset.d);
     render();
-  } else if(act === 'photo'){
-    var fi = document.getElementById('rcFile');
+  } else if(act === 'photo' || act === 'photo-gallery'){
+    var fi = document.getElementById(act === 'photo' ? 'rcFile' : 'rcGallery');
     if(fi) fi.click();
   } else if(act === 'exp-new'){
     var nr = newRcp('new', billTarget());
@@ -1584,7 +1586,7 @@ document.addEventListener('click', function(e){
 
 document.addEventListener('change', function(e){
   var t = e.target, l = cur();
-  if(t.id === 'rcFile'){ var f0 = t.files && t.files[0]; t.value = ''; if(f0) handleFile(f0); return; }
+  if(t.id === 'rcFile' || t.id === 'rcGallery'){ var f0 = t.files && t.files[0]; t.value = ''; if(f0){ logEvent('Foto', (t.id === 'rcFile' ? 'Kamera ' : 'Galerie ') + (f0.type || '?') + ' ' + Math.round(f0.size / 1024) + ' KB'); handleFile(f0); } return; }
   if(t.id === 'rcList'){ readRcp(); setRcpList(t.value); rebuildSheet(); return; }
   if(t.dataset && t.dataset.list){
     var ll = listById(t.dataset.list);

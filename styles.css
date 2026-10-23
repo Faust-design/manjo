@@ -184,6 +184,7 @@ button.exm:active b{color:var(--ink-2)}
 .acc-row{display:flex;align-items:center;gap:10px;min-height:36px;font-size:14px}
 .acc-row input{width:18px;height:18px;accent-color:var(--ink);flex:none}
 .photo-big{width:100%;margin:0 0 8px;justify-content:center}
+.photo-big + .photo-big{margin-top:-2px}
 .monthbar{display:flex;align-items:center;gap:8px;margin:0 0 8px}
 .monthbar h2{flex:1;text-align:center;font-size:17px;text-transform:none;letter-spacing:0;font-family:var(--f-display);font-stretch:75%;font-weight:800}
 .catrow{display:grid;gap:5px;padding:9px 0;border-top:1px solid var(--line)}
