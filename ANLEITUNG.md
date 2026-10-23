@@ -68,3 +68,6 @@ Einmalig im Supabase-Projekt den Inhalt von `schema_v6.sql` im SQL Editor ausfü
 
 ## Update: Markt im Text
 Schreibe den Marktnamen einfach dazu, zum Beispiel „Hafermilch Lidl“ oder „bei Rewe Brot“. Der Artikel kommt direkt in diese Liste, der Marktname wird gestrichen. Das geht auch in der Allgemein-Liste und beim Import.
+
+## Update: Mehrere Märkte pro Artikel
+Tippe einen Artikel an, dann siehst du unter „Erscheint in“ alle Märkte. Du kannst einen oder mehrere antippen. „Passende Märkte“ heißt: die App entscheidet. Dafür muss einmal `schema_v7.sql` in Supabase laufen (enthält das ältere v6).

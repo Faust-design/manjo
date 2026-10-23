@@ -273,7 +273,7 @@ const ok = (c, m) => { count++; if(!c){ fails++; console.log('FAIL ' + m); } els
   ok(Q('.tab[aria-selected="true"]') && /Allgemein/.test(Q('.tab[aria-selected="true"]').textContent), 'allgemeine Liste ist geöffnet');
   type(Q('#newItem'), 'Kaffee'); ok(/→ Supermarkt$/.test(Q('#hint').textContent.trim()), 'Hinweis nennt nur den Supermarkt');
   submit(Q('#addForm')); await sleep(120);
-  ok(db.items.some(i => i.name === 'Kaffee' && i.list_id === G.id && !i.target_list), 'Kaffee in der allgemeinen Liste, ohne Zuordnung');
+  ok(db.items.some(i => i.name === 'Kaffee' && i.list_id === G.id && !(i.targets && i.targets.length)), 'Kaffee in der allgemeinen Liste, ohne Zuordnung');
   ok(/bei Supermarkt/.test(mainText()) && /Frühstück/.test((QA('.item').find(li => /Kaffee/.test(li.textContent)) || {closest: () => ({textContent: ''})}).closest('.gsec').textContent) , 'Allgemein sortiert Kaffee nach Station, nicht unter Sonstiges');
   const tabBy = re => QA('.tab').find(b => re.test(b.textContent));
   click(tabBy(/Supermarkt/)); await sleep(30);
@@ -285,7 +285,7 @@ const ok = (c, m) => { count++; if(!c){ fails++; console.log('FAIL ' + m); } els
   type(Q('#newItem'), 'Hafermilch'); ok(/nur Baumarkt/.test(Q('#hint').textContent), 'Hinweis: Glossar ordnet zu');
   submit(Q('#addForm')); await sleep(120);
   const ghm = db.items.find(i => i.name === 'Hafermilch' && i.list_id === G.id);
-  ok(ghm && ghm.target_list === L1, 'Hafermilch laut Glossar nur Baumarkt zugeordnet');
+  ok(ghm && ghm.targets[0] === L1, 'Hafermilch laut Glossar nur Baumarkt zugeordnet');
   ok(QA('.item').some(li => /Hafermilch/.test(li.textContent) && /nur Baumarkt/.test(li.textContent)), 'Hafermilch als „nur Baumarkt“ gekennzeichnet');
   ok(!Q('#toast').hidden && /Alle passenden/.test(Q('#toastBtn').textContent), 'Meldung mit „Alle passenden“');
   type(Q('#newItem'), 'Schrauben'); ok(/→ Baumarkt$/.test(Q('#hint').textContent.trim()), 'Schrauben: Hinweis nennt nur den Baumarkt');
@@ -296,11 +296,16 @@ const ok = (c, m) => { count++; if(!c){ fails++; console.log('FAIL ' + m); } els
   db.expenses.push({id: 'px4', list_id: L1, amount_cents: 199, description: 'Bon', payer_email: ME.email, participants: [ME.email], kind: 'expense', spent_on: '2026-10-04', created_at: new Date().toISOString(), lines: [{n: 'BUTTER', c: 199, cat: 'sonst'}]});
   w.dispatchEvent(new w.Event('online')); await sleep(400);
   type(Q('#newItem'), 'Butter'); submit(Q('#addForm')); await sleep(120);
-  ok(db.items.find(i => i.name === 'Butter' && i.list_id === G.id).target_list === L1, 'Butter nach Kassenzetteln dem günstigeren Markt zugeordnet');
+  ok(db.items.find(i => i.name === 'Butter' && i.list_id === G.id).targets[0] === L1, 'Butter nach Kassenzetteln dem günstigeren Markt zugeordnet');
   click(QA('.item').find(li => /Kaffee/.test(li.textContent)).querySelector('.name-btn')); await sleep(30);
   ok(/Erscheint in/.test(Q('#sheetBody').textContent), 'Artikel-Fenster zeigt Zuordnung');
   click(QA('[data-act="assign"]').find(b => /Supermarkt/.test(b.textContent))); await sleep(120);
-  ok(db.items.find(i => i.name === 'Kaffee').target_list === L0, 'Kaffee von Hand dem Supermarkt zugeordnet');
+  ok(db.items.find(i => i.name === 'Kaffee').targets[0] === L0, 'Kaffee von Hand dem Supermarkt zugeordnet');
+  click(QA('[data-act="assign"]').find(b => /Baumarkt/.test(b.textContent))); await sleep(120);
+  ok(db.items.find(i => i.name === 'Kaffee').targets.length === 2, 'zweiten Markt zusätzlich gewählt (Mehrfachauswahl)');
+  ok(QA('[data-act="assign"]').filter(b => b.getAttribute('aria-pressed') === 'true').length === 2, 'beide Märkte als gewählt markiert');
+  click(QA('[data-act="assign"]').find(b => /Baumarkt/.test(b.textContent))); await sleep(120);
+  ok(db.items.find(i => i.name === 'Kaffee').targets.length === 1, 'Markt wieder abgewählt');
   click(Q('[data-act="close"]')); await sleep(250);
   click(tabBy(/Baumarkt/)); await sleep(30);
   ok(!QA('.item').some(li => /Kaffee/.test(li.textContent)) && QA('.item').some(li => /Butter/.test(li.textContent)), 'Baumarkt: Kaffee weg, Butter da');

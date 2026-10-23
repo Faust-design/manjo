@@ -16,7 +16,7 @@ var EYE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="c
 var EYE_OFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1"/></svg>';
 var NAV_INDEX = {list:0, markets:1, bills:2, settings:3, account:4};
 var DB_UPDATE_CODES = ['42P01', '42703', 'PGRST204', 'PGRST205'];
-var APP_VERSION = '2026-10-23.9';
+var APP_VERSION = '2026-10-23.10';
 var GEN = 'allgemein';
 var LS_LOG = 'manjo-log';
 /* Kleines Protokoll auf dem Gerät: hilft, Fehler zu finden, die man auf dem Handy nicht sieht */
@@ -143,6 +143,8 @@ function findItem(id){ for(var i = 0; i < state.items.length; i++){ if(state.ite
 function listItems(l){ return state.items.filter(function(i){ return i.list === l.id && !state.gone[i.id]; }); }
 /* Was in einer Liste zu sehen ist: eigene Artikel, bei Märkten dazu die allgemeinen Artikel
    ohne Zuordnung oder mit Zuordnung zu genau diesem Markt (eigene Artikel gleichen Namens haben Vorrang) */
+/* Märkte, denen ein Artikel ausdrücklich zugeordnet ist */
+function tgts(i){ return (i.targets || []).filter(function(id){ var x = listById(id); return x && !isGen(x); }); }
 function viewItems(l){
   var own = listItems(l);
   if(isGen(l)){
@@ -154,13 +156,13 @@ function viewItems(l){
     return own.concat(state.items.filter(function(i){ return mids[i.list] && !state.gone[i.id] && !ks[baseKey(i.name)]; }));
   }
   var gens = genLists().map(function(g){ return g.id; });
-  if(!gens.length) return own;
   var keys = {};
   own.forEach(function(i){ keys[baseKey(i.name)] = 1; });
   var extra = state.items.filter(function(i){
-    if(gens.indexOf(i.list) < 0 || state.gone[i.id] || keys[baseKey(i.name)]) return false;
-    if(i.target && listById(i.target)) return i.target === l.id;
-    return fitsMarket(l, i.name);
+    if(i.list === l.id || state.gone[i.id] || keys[baseKey(i.name)]) return false;
+    var t = tgts(i);
+    if(t.length) return t.indexOf(l.id) >= 0;
+    return gens.indexOf(i.list) >= 0 && fitsMarket(l, i.name);
   });
   return own.concat(extra);
 }
@@ -199,7 +201,7 @@ function newListObj(name, tpl){
 function normItem(id, d){
   if(!d || !d.name) return null;
   return {id: String(id), name: String(d.name), cat: String(d.cat || 'sonst'), done: !!d.done, ts: Date.parse(d.created_at) || Date.now(), list: String(d.list_id || ''),
-          target: d.target_list ? String(d.target_list) : null};
+          targets: Array.isArray(d.targets) ? d.targets.map(String) : (d.target_list ? [String(d.target_list)] : [])};
 }
 function normExp(d){
   return {id: String(d.id), list: String(d.list_id), cents: +d.amount_cents || 0, desc: String(d.description || ''),
@@ -341,7 +343,7 @@ async function flush(){
 }
 /* Änderung auf einen Artikel anwenden; list_id heißt lokal list */
 function applyPatch(it, patch){
-  Object.keys(patch).forEach(function(k){ if(k === 'list_id') it.list = patch[k]; else if(k === 'target_list') it.target = patch[k]; else it[k] = patch[k]; });
+  Object.keys(patch).forEach(function(k){ if(k === 'list_id') it.list = patch[k]; else if(k === 'target_list') it.targets = patch[k] ? [patch[k]] : []; else it[k] = patch[k]; });
 }
 /* Noch nicht gesendete Änderungen auf frisch geladene Daten anwenden */
 function replayQueue(){
@@ -387,7 +389,7 @@ async function loadAll(){
       sb.from('expenses').select('*').order('created_at').range(0, 4999),
       optional(sb.from('profiles').select('email,display_name')),
       optional(sb.from('products').select('*').order('created_at')),
-      optional(sb.from('items').select('target_list').limit(1))
+      optional(sb.from('items').select('targets').limit(1))
     ]);
     for(var k = 0; k < 4; k++){ if(r[k].error) throw r[k].error; }
     var mem = {};
@@ -445,8 +447,8 @@ var store = {
   addItem: function(item){
     var id = uuid(), at = new Date().toISOString();
     var row = {id: id, list_id: item.list, name: item.name, cat: item.cat, done: false};
-    if(item.target) row.target_list = item.target;
-    upsertItem({id: id, name: item.name, cat: item.cat, done: false, ts: Date.now(), list: item.list, target: item.target || null});
+    if(item.targets && item.targets.length) row.targets = item.targets;
+    upsertItem({id: id, name: item.name, cat: item.cat, done: false, ts: Date.now(), list: item.list, targets: item.targets || []});
     render();
     enqueue({op: 'ins', row: row, at: at});
     return id;
@@ -647,7 +649,7 @@ function addItem(l, raw, batch){
       return {status: 'dup', name: dg.name};
     }
     var at = autoTarget(name);
-    var gid = store.addItem({name: name, cat: 'sonst', list: l.id, target: at ? at.list : null});
+    var gid = store.addItem({name: name, cat: 'sonst', list: l.id, targets: at ? [at.list] : []});
     return {status: 'gen', id: gid, name: name, target: at};
   }
   var g = glossFor(name), gt = g && listById(g.list), target = sm ? sm.list : ((gt && !isGen(gt) && g.list !== l.id && gt) || l);
@@ -682,7 +684,7 @@ function addFromText(text){
     } else if(r.status === 'gen'){
       if(r.target){
         flashText(splitQty(r.name).base + ' → nur ' + listName(r.target.list) + ' (' + r.target.why + ')');
-        showToast(splitQty(r.name).base + ' erscheint nur bei ' + listName(r.target.list) + ', ' + r.target.why + '.', 'Alle passenden', function(){ store.updateItem(r.id, {target_list: null}); flashText(splitQty(r.name).base + ' erscheint in allen passenden Märkten.'); }, 8000);
+        showToast(splitQty(r.name).base + ' erscheint nur bei ' + listName(r.target.list) + ', ' + r.target.why + '.', 'Alle passenden', function(){ store.updateItem(r.id, {targets: []}); flashText(splitQty(r.name).base + ' erscheint in allen passenden Märkten.'); }, 8000);
       } else { var fn2 = fitNames(r.name); flashText(splitQty(r.name).base + (fn2.length ? ' → ' + fn2.join(', ') : ' passt zu keinem Markt. Ordne es im Artikel zu.')); }
     } else if(r.status === 'market'){
       flash(esc(splitQty(r.name).base) + ' → Liste ' + esc(listName(r.list)) + ' · ' + catHTML(listById(r.list), r.cat));
@@ -880,11 +882,12 @@ function itemHTML(i){
   var entering = t !== undefined && Date.now() - t < 240;
   var sq = splitQty(i.name), g = glossFor(i.name), subs = [];
   if(g && g.product) subs.push(g.product);
-  if(renderL && !isGen(renderL) && i.list !== renderL.id) subs.push('aus Allgemein');
+  if(renderL && !isGen(renderL) && i.list !== renderL.id){ var hl = listById(i.list); subs.push(hl && !isGen(hl) ? 'aus ' + hl.name : 'aus Allgemein'); }
   if(renderL && isGen(renderL)){
     var own = listById(i.list);
-    if(own && !isGen(own)) subs.push('nur ' + own.name);
-    else if(i.target && listById(i.target)) subs.push('nur ' + listName(i.target));
+    var tg = tgts(i);
+    if(own && !isGen(own)) subs.push('nur ' + [own.name].concat(tg.map(listName)).join(', '));
+    else if(tg.length) subs.push('nur ' + tg.map(listName).join(', '));
     else { var fl = fitNames(i.name); subs.push(fl.length ? 'bei ' + fl.join(', ') : 'passt zu keinem Markt'); }
   }
   var cls = 'item' + (isDone ? ' done' : '') + (pendingDone[i.id] ? ' checking' : '') + (entering ? ' enter' : '');
@@ -914,7 +917,7 @@ function cartHTML(done){
 function genCat(i){
   var il = listById(i.list), m = null;
   if(il && !isGen(il)) m = il;
-  else if(i.target && listById(i.target)) m = listById(i.target);
+  else if(tgts(i)[0]) m = listById(tgts(i)[0]);
   else m = marketLists().filter(function(x){ return fitsMarket(x, i.name); })[0] || null;
   if(!m) return {key: 'sonst', label: 'Sonstiges', ord: 99999};
   var c = catIn(m, i), ml = marketLists(), mi = Math.max(0, ml.indexOf(m));
@@ -928,7 +931,7 @@ function renderGeneral(l){
     h += '<section class="empty"><h2>' + (state.loaded ? 'Allgemeine Liste' : 'Liste wird geladen …') + '</h2>' +
       '<p>Tragt hier alles ein, was ihr braucht. Was ihr direkt in einem Markt eintragt, erscheint hier auch. Jeder Artikel erscheint in den Märkten, die ihn führen: Lebensmittel in Supermärkten, Schrauben im Baumarkt. Ist er einem Markt zugeordnet, erscheint er nur dort. Zuordnen kann die App selbst (Glossar und Kassenzettel), oder du stellst es im Artikel ein.</p>' +
       (state.loaded ? '<div class="chips">' + ['Bananen', 'Hafermilch', 'Spülmittel', 'Brezn'].map(function(x){ return '<button class="chip" data-act="sample" data-text="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' : '') +
-      (state.loaded && !state.dbV6 ? '<p class="tip" style="margin-top:10px">Für die Zuordnung zu einzelnen Märkten fehlt noch ein Datenbank-Update (schema_v6.sql).</p>' : '') + '</section>';
+      (state.loaded && !state.dbV6 ? '<p class="tip" style="margin-top:10px">Für die Zuordnung zu einzelnen Märkten fehlt noch ein Datenbank-Update (schema_v7.sql).</p>' : '') + '</section>';
     main.innerHTML = h;
     return;
   }
@@ -1263,7 +1266,7 @@ function sheetContent(){
     return {title: 'Artikel bearbeiten', sub: gen ? 'Artikel aus der allgemeinen Liste. Name, Menge und Zuordnung gelten überall.' : 'Name und Menge ändern, zum Beispiel „2 Milch“, oder eine andere Station wählen. Die App merkt sich die Station für diesen Artikel.',
       body: '<form id="itemForm" class="inline-form" autocomplete="off"><label class="sr" for="itemName">Name</label>' +
         '<input class="field" id="itemName" maxlength="120" value="' + esc(it.name) + '"><button class="ibtn" type="submit" aria-label="Name speichern">' + TICK + '</button></form>' +
-        (gen ? assignHTML(it) : '') +
+        assignHTML(it) +
         itemGlossHTML(it) +
         '<h3 class="rc-h">Preise</h3>' + pricesHTML(pricesOf(it.name)) +
         (stL ? '<h3 class="rc-h">Station' + (gen ? ' bei ' + esc(stL.name) : '') + '</h3>' +
@@ -1305,11 +1308,17 @@ function sheetContent(){
   return null;
 }
 function assignHTML(it){
-  var curT = it.target && listById(it.target) ? it.target : '';
+  var il = listById(it.list), gen = isGen(il), ml = marketLists(), t = tgts(it);
+  if(!gen && ml.length < 2) return '';
+  var chips = (gen ? [['', 'Passende Märkte', !t.length]] : []).concat(ml.map(function(x){
+    return [x.id, x.name, gen ? t.indexOf(x.id) >= 0 : (x.id === it.list || t.indexOf(x.id) >= 0), !gen && x.id === it.list];
+  }));
   var fl = fitNames(it.name);
-  return '<h3 class="rc-h">Erscheint in</h3>' + chipsHTML('assign', [['', 'Passenden Märkten']].concat(marketLists().map(function(x){ return [x.id, 'Nur ' + x.name]; })), curT) +
-    (curT ? '' : '<p class="tip">Passend sind gerade: ' + (fl.length ? esc(fl.join(', ')) : 'keine. Wähle einen Markt.') + '</p>') +
-    (state.dbV6 ? '' : '<p class="tip">Für die Zuordnung fehlt noch ein Datenbank-Update (schema_v6.sql).</p>');
+  return '<h3 class="rc-h">Erscheint in</h3><div class="fchips" role="group">' + chips.map(function(x){
+    return '<button class="fchip" data-act="assign" data-id="' + esc(x[0]) + '" aria-pressed="' + !!x[2] + '"' + (x[3] ? ' disabled' : '') + '>' + esc(x[1]) + '</button>';
+  }).join('') + '</div>' +
+    (gen && !t.length ? '<p class="tip">Passend sind gerade: ' + (fl.length ? esc(fl.join(', ')) : 'keine. Wähle einen oder mehrere Märkte.') + '</p>' : '<p class="tip">Mehrere Märkte sind möglich.</p>') +
+    (state.dbV6 ? '' : '<p class="tip">Für die Zuordnung fehlt noch ein Datenbank-Update (schema_v7.sql).</p>');
 }
 function itemGlossHTML(it){
   var g = glossFor(it.name);
@@ -1335,7 +1344,7 @@ function glossBody(s){
 }
 function glossDefaultList(it){
   var ml = marketLists();
-  if(it){ var il = listById(it.list); if(il && !isGen(il)) return il.id; if(it.target && listById(it.target)) return it.target; }
+  if(it){ var il = listById(it.list); if(il && !isGen(il)) return il.id; if(tgts(it)[0]) return tgts(it)[0]; }
   var c = cur();
   return c && !isGen(c) ? c.id : (ml[0] ? ml[0].id : '');
 }
@@ -1365,7 +1374,7 @@ function saveGloss(){
     var msg = 'Glossar: ' + name + (product ? ' = ' + product : '') + ', kaufen bei ' + listName(list) + '.';
     closeSheet();
     var it = from && findItem(from);
-    if(it && isGen(listById(it.list))){ if(state.dbV6 && it.target !== list) store.updateItem(it.id, {target_list: list}); }
+    if(it && isGen(listById(it.list))){ if(state.dbV6 && tgts(it).join() !== list) store.updateItem(it.id, {targets: [list]}); }
     else if(it && it.list !== list){ moveItem(it.id, list); }
     flashText(msg);
   });
@@ -1889,9 +1898,13 @@ document.addEventListener('click', function(e){
   } else if(act === 'assign'){
     var ai = state.sheet && findItem(state.sheet.id);
     if(!ai) return;
-    if(!state.dbV6){ flashText('Für die Zuordnung fehlt ein Datenbank-Update: schema_v6.sql in Supabase ausführen.'); return; }
-    store.updateItem(ai.id, {target_list: id || null});
-    flashText(splitQty(ai.name).base + (id ? ' erscheint nur bei ' + listName(id) + '.' : ' erscheint in allen passenden Märkten.'));
+    if(!state.dbV6){ flashText('Für die Zuordnung fehlt ein Datenbank-Update: schema_v7.sql in Supabase ausführen.'); return; }
+    var aiL = listById(ai.list), aiGen = isGen(aiL), next = tgts(ai).slice();
+    if(!id) next = [];
+    else if(!aiGen && id === ai.list) return;
+    else { var ix = next.indexOf(id); if(ix >= 0) next.splice(ix, 1); else next.push(id); }
+    store.updateItem(ai.id, {targets: next});
+    flashText(splitQty(ai.name).base + (next.length ? ' erscheint ' + (aiGen ? 'nur ' : 'auch ') + 'bei ' + next.map(listName).join(', ') + '.' : aiGen ? ' erscheint in allen passenden Märkten.' : ' steht nur noch in ' + aiL.name + '.'));
   } else if(act === 'gen-create'){
     lsSet('manjo-gen-tip', '1');
     store.createList('Allgemein', GEN).then(function(nid){
