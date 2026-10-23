@@ -16,7 +16,7 @@ var EYE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="c
 var EYE_OFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1"/></svg>';
 var NAV_INDEX = {list:0, markets:1, bills:2, settings:3, account:4};
 var DB_UPDATE_CODES = ['42P01', '42703', 'PGRST204', 'PGRST205'];
-var APP_VERSION = '2026-10-23.7';
+var APP_VERSION = '2026-10-23.8';
 var GEN = 'allgemein';
 var LS_LOG = 'manjo-log';
 /* Kleines Protokoll auf dem Gerät: hilft, Fehler zu finden, die man auf dem Handy nicht sieht */
@@ -145,7 +145,14 @@ function listItems(l){ return state.items.filter(function(i){ return i.list === 
    ohne Zuordnung oder mit Zuordnung zu genau diesem Markt (eigene Artikel gleichen Namens haben Vorrang) */
 function viewItems(l){
   var own = listItems(l);
-  if(isGen(l)) return own;
+  if(isGen(l)){
+    /* Allgemein zeigt auch, was direkt in einem Markt eingetragen wurde */
+    var ks = {};
+    own.forEach(function(i){ ks[baseKey(i.name)] = 1; });
+    var mids = {};
+    marketLists().forEach(function(x){ mids[x.id] = 1; });
+    return own.concat(state.items.filter(function(i){ return mids[i.list] && !state.gone[i.id] && !ks[baseKey(i.name)]; }));
+  }
   var gens = genLists().map(function(g){ return g.id; });
   if(!gens.length) return own;
   var keys = {};
@@ -855,7 +862,12 @@ function itemHTML(i){
   var sq = splitQty(i.name), g = glossFor(i.name), subs = [];
   if(g && g.product) subs.push(g.product);
   if(renderL && !isGen(renderL) && i.list !== renderL.id) subs.push('aus Allgemein');
-  if(renderL && isGen(renderL) && !(i.target && listById(i.target))){ var fl = fitNames(i.name); subs.push(fl.length ? 'bei ' + fl.join(', ') : 'passt zu keinem Markt'); }
+  if(renderL && isGen(renderL)){
+    var own = listById(i.list);
+    if(own && !isGen(own)) subs.push('nur ' + own.name);
+    else if(i.target && listById(i.target)) subs.push('nur ' + listName(i.target));
+    else { var fl = fitNames(i.name); subs.push(fl.length ? 'bei ' + fl.join(', ') : 'passt zu keinem Markt'); }
+  }
   var cls = 'item' + (isDone ? ' done' : '') + (pendingDone[i.id] ? ' checking' : '') + (entering ? ' enter' : '');
   return '<li class="' + cls + '" data-id="' + esc(i.id) + '"' + (entering ? ' data-t="' + t + '"' : '') + '>' +
     '<button class="box-btn" role="checkbox" aria-checked="' + isDone + '" data-act="toggle" data-id="' + esc(i.id) + '" aria-label="' + esc(i.name) + '"><span class="box">' + CHECK + '</span></button>' +
@@ -879,11 +891,23 @@ function cartHTML(done){
   return '<section class="cart"><div class="cart-h"><h2>Im Wagen</h2><span class="count">' + done.length + '</span>' +
     '<button class="link" data-act="clear-done">Leeren</button></div><ul class="items">' + done.map(function(i){ return itemHTML(i); }).join('') + '</ul></section>';
 }
+/* Einordnung eines Artikels in der Allgemein-Liste: Station des Marktes, zu dem er gehört oder passt */
+function genCat(i){
+  var il = listById(i.list), m = null;
+  if(il && !isGen(il)) m = il;
+  else if(i.target && listById(i.target)) m = listById(i.target);
+  else m = marketLists().filter(function(x){ return fitsMarket(x, i.name); })[0] || null;
+  if(!m) return {key: 'sonst', label: 'Sonstiges', ord: 99999};
+  var c = catIn(m, i), ml = marketLists(), mi = Math.max(0, ml.indexOf(m));
+  var first = ml.filter(function(x){ return x.tpl === 'supermarkt'; })[0];
+  if(m.tpl === 'supermarkt') return {key: c, label: stationName(m, c), ord: (first ? 0 : 0) + stationNo(m, c)};
+  return {key: m.id + '|' + c, label: m.name + ' · ' + stationName(m, c), ord: 1000 + mi * 100 + stationNo(m, c)};
+}
 function renderGeneral(l){
-  var its = listItems(l), h = '';
+  var its = viewItems(l), h = '';
   if(!state.loaded || !its.length){
     h += '<section class="empty"><h2>' + (state.loaded ? 'Allgemeine Liste' : 'Liste wird geladen …') + '</h2>' +
-      '<p>Tragt hier alles ein, was ihr braucht. Jeder Artikel erscheint in den Märkten, die ihn führen: Lebensmittel in Supermärkten, Schrauben im Baumarkt. Ist er einem Markt zugeordnet, erscheint er nur dort. Zuordnen kann die App selbst (Glossar und Kassenzettel), oder du stellst es im Artikel ein.</p>' +
+      '<p>Tragt hier alles ein, was ihr braucht. Was ihr direkt in einem Markt eintragt, erscheint hier auch. Jeder Artikel erscheint in den Märkten, die ihn führen: Lebensmittel in Supermärkten, Schrauben im Baumarkt. Ist er einem Markt zugeordnet, erscheint er nur dort. Zuordnen kann die App selbst (Glossar und Kassenzettel), oder du stellst es im Artikel ein.</p>' +
       (state.loaded ? '<div class="chips">' + ['Bananen', 'Hafermilch', 'Spülmittel', 'Brezn'].map(function(x){ return '<button class="chip" data-act="sample" data-text="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' : '') +
       (state.loaded && !state.dbV6 ? '<p class="tip" style="margin-top:10px">Für die Zuordnung zu einzelnen Märkten fehlt noch ein Datenbank-Update (schema_v6.sql).</p>' : '') + '</section>';
     main.innerHTML = h;
@@ -891,11 +915,11 @@ function renderGeneral(l){
   }
   var open = its.filter(function(i){ return !i.done || pendingDone[i.id]; }).sort(byTs);
   var done = its.filter(function(i){ return i.done && !pendingDone[i.id]; }).sort(byTs);
-  var groups = {};
-  open.forEach(function(i){ var k = i.target && listById(i.target) ? i.target : ''; (groups[k] = groups[k] || []).push(i); });
-  var order = [''].concat(marketLists().map(function(x){ return x.id; })).filter(function(k){ return groups[k] && groups[k].length; });
+  var groups = {}, meta = {};
+  open.forEach(function(i){ var g = genCat(i); meta[g.key] = g; (groups[g.key] = groups[g.key] || []).push(i); });
+  var order = Object.keys(groups).sort(function(a, b){ return meta[a].ord - meta[b].ord; });
   h += order.map(function(k){
-    return '<section class="gsec"><div class="stop-h"><h2>' + (k ? 'Nur ' + esc(listName(k)) : 'Passende Märkte') + '</h2><span class="count">' + groups[k].length + '</span></div>' +
+    return '<section class="gsec"><div class="stop-h"><h2>' + esc(meta[k].label) + '</h2><span class="count">' + groups[k].length + '</span></div>' +
       '<ul class="items">' + groups[k].map(function(i){ return itemHTML(i); }).join('') + '</ul></section>';
   }).join('');
   if(!order.length) h += '<p class="allset">Alles erledigt.</p>';

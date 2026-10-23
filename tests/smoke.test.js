@@ -274,7 +274,7 @@ const ok = (c, m) => { count++; if(!c){ fails++; console.log('FAIL ' + m); } els
   type(Q('#newItem'), 'Kaffee'); ok(/→ Supermarkt$/.test(Q('#hint').textContent.trim()), 'Hinweis nennt nur den Supermarkt');
   submit(Q('#addForm')); await sleep(120);
   ok(db.items.some(i => i.name === 'Kaffee' && i.list_id === G.id && !i.target_list), 'Kaffee in der allgemeinen Liste, ohne Zuordnung');
-  ok(/Passende Märkte/.test(mainText()) && /bei Supermarkt/.test(mainText()), 'Gruppe „Passende Märkte“ mit Markt');
+  ok(/bei Supermarkt/.test(mainText()) && /Frühstück/.test((QA('.item').find(li => /Kaffee/.test(li.textContent)) || {closest: () => ({textContent: ''})}).closest('.gsec').textContent) , 'Allgemein sortiert Kaffee nach Station, nicht unter Sonstiges');
   const tabBy = re => QA('.tab').find(b => re.test(b.textContent));
   click(tabBy(/Supermarkt/)); await sleep(30);
   let kRow = QA('.item').find(li => /Kaffee/.test(li.textContent));
@@ -286,7 +286,7 @@ const ok = (c, m) => { count++; if(!c){ fails++; console.log('FAIL ' + m); } els
   submit(Q('#addForm')); await sleep(120);
   const ghm = db.items.find(i => i.name === 'Hafermilch' && i.list_id === G.id);
   ok(ghm && ghm.target_list === L1, 'Hafermilch laut Glossar nur Baumarkt zugeordnet');
-  ok(/Nur Baumarkt/.test(mainText()), 'Gruppe „Nur Baumarkt“');
+  ok(QA('.item').some(li => /Hafermilch/.test(li.textContent) && /nur Baumarkt/.test(li.textContent)), 'Hafermilch als „nur Baumarkt“ gekennzeichnet');
   ok(!Q('#toast').hidden && /Alle passenden/.test(Q('#toastBtn').textContent), 'Meldung mit „Alle passenden“');
   type(Q('#newItem'), 'Schrauben'); ok(/→ Baumarkt$/.test(Q('#hint').textContent.trim()), 'Schrauben: Hinweis nennt nur den Baumarkt');
   submit(Q('#addForm')); await sleep(120);
@@ -313,6 +313,12 @@ const ok = (c, m) => { count++; if(!c){ fails++; console.log('FAIL ' + m); } els
   click(tabBy(/Allgemein/)); await sleep(30);
   ok(/Im Wagen/.test(mainText()) && QA('.cart .item').some(li => /Kaffee/.test(li.textContent)), 'allgemeine Liste zeigt Kaffee im Wagen');
   ok(QA('.item').length >= 3, 'allgemeine Liste bleibt vollständig');
+  // direkt im Markt eingetragen: erscheint auch in Allgemein
+  click(tabBy(/Supermarkt/)); await sleep(30);
+  type(Q('#newItem'), 'Joghurt'); submit(Q('#addForm')); await sleep(120);
+  click(tabBy(/Allgemein/)); await sleep(30);
+  const jRow = QA('.item').find(li => /Joghurt/.test(li.textContent));
+  ok(jRow && /nur Supermarkt/.test(jRow.textContent) && /Milch/.test(jRow.closest('.gsec').textContent), 'direkt im Markt eingetragen: auch in Allgemein, einsortiert');
 
   // Einkaufsmodus
   nav('list'); await sleep(20);

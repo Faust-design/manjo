@@ -61,6 +61,6 @@ Einmalig im Supabase-Projekt den Inhalt von `schema_v5.sql` im SQL Editor ausfü
 Einmalig im Supabase-Projekt den Inhalt von `schema_v6.sql` im SQL Editor ausführen. Danach:
 
 - Unter Märkte → Neuer Markt → **Allgemein** (oder über den Hinweis in einer Liste) legst du die allgemeine Liste an. Sie steht als Tab immer ganz vorn.
-- Was dort steht, erscheint in den **Märkten, die es führen**, einsortiert nach deren Route: Lebensmittel nur in Supermärkten, Schrauben im Baumarkt, Spülmittel im Supermarkt und in der Drogerie. Unbekanntes landet im Supermarkt. Ist ein Artikel einem Markt zugeordnet, erscheint er **nur dort**.
+- Was dort steht, erscheint in den **Märkten, die es führen**, einsortiert nach deren Route: Lebensmittel nur in Supermärkten, Schrauben im Baumarkt, Spülmittel im Supermarkt und in der Drogerie. Unbekanntes landet im Supermarkt. Die Allgemein-Liste ist nach Stationen sortiert (Obst, Brot, Milch …), und was ihr direkt in einem Markt eintragt, erscheint dort ebenfalls (mit „nur <Markt>“). Ist ein Artikel einem Markt zugeordnet, erscheint er **nur dort**.
 - Zugeordnet wird automatisch über das Glossar oder, wenn die Kassenzettel denselben Artikel in mindestens zwei Märkten zeigen und einer mindestens 10 % günstiger ist. Im Artikel lässt sich die Zuordnung jederzeit umstellen („Erscheint in“).
 - Abhaken in einem Markt hakt den Artikel auch in der allgemeinen Liste ab. Die allgemeine Liste selbst bleibt vollständig.
