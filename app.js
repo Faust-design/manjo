@@ -16,7 +16,7 @@ var EYE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="c
 var EYE_OFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1"/></svg>';
 var NAV_INDEX = {list:0, markets:1, bills:2, settings:3, account:4};
 var DB_UPDATE_CODES = ['42P01', '42703', 'PGRST204', 'PGRST205'];
-var APP_VERSION = '2026-10-23.6';
+var APP_VERSION = '2026-10-23.7';
 var GEN = 'allgemein';
 var LS_LOG = 'manjo-log';
 /* Kleines Protokoll auf dem Gerät: hilft, Fehler zu finden, die man auf dem Handy nicht sieht */
@@ -151,10 +151,35 @@ function viewItems(l){
   var keys = {};
   own.forEach(function(i){ keys[baseKey(i.name)] = 1; });
   var extra = state.items.filter(function(i){
-    return gens.indexOf(i.list) >= 0 && !state.gone[i.id] && (!i.target || i.target === l.id || !listById(i.target)) && !keys[baseKey(i.name)];
+    if(gens.indexOf(i.list) < 0 || state.gone[i.id] || keys[baseKey(i.name)]) return false;
+    if(i.target && listById(i.target)) return i.target === l.id;
+    return fitsMarket(l, i.name);
   });
   return own.concat(extra);
 }
+/* Kennt ein Markt den Artikel? Ja, wenn seine Vorlage ihn einer echten Station zuordnet oder er dort gelernt wurde */
+function knows(l, name){
+  if(learnedFor(l)[baseKey(name)]) return true;
+  return clsf(l, name) !== fallbackId(l.stations);
+}
+/* Passt ein nicht zugeordneter allgemeiner Artikel in diesen Markt? Supermärkte nehmen auch Unbekanntes,
+   solange kein anderer Markt (Baumarkt, Drogerie ...) den Artikel kennt */
+var FOOD = ['obst', 'brot', 'fleisch', 'milch', 'nudeln', 'fruehstueck', 'suess', 'getraenke', 'tk'];
+var NON_FOOD_MARKETS = ['baumarkt', 'drogerie', 'ikea'];
+/* Lebensmittel nach der Supermarkt-Vorlage, unabhängig davon, wie eure Märkte eingerichtet sind */
+function isFood(name){
+  var st = TPLS.supermarkt.stations;
+  return FOOD.indexOf(classify(splitQty(name).base || name, null, 'supermarkt', st)) >= 0;
+}
+function fitsMarket(l, name){
+  if(isGen(l)) return false;
+  if(learnedFor(l)[baseKey(name)]) return true;
+  if(NON_FOOD_MARKETS.indexOf(l.tpl) >= 0 && isFood(name)) return false;
+  if(knows(l, name)) return true;
+  if(l.tpl !== 'supermarkt') return false;
+  return !marketLists().some(function(x){ return x.tpl !== 'supermarkt' && knows(x, name); });
+}
+function fitNames(name){ return marketLists().filter(function(x){ return fitsMarket(x, name); }).map(function(x){ return x.name; }); }
 /* Station eines Artikels in einem Markt: eigene Artikel haben ihre Station, allgemeine werden einsortiert */
 function catIn(l, i){ return i.list === l.id ? effCat(l, i.cat) : clsf(l, i.name); }
 function openCount(l){ return viewItems(l).filter(function(i){ return !i.done; }).length; }
@@ -635,8 +660,8 @@ function addFromText(text){
     } else if(r.status === 'gen'){
       if(r.target){
         flashText(splitQty(r.name).base + ' → nur ' + listName(r.target.list) + ' (' + r.target.why + ')');
-        showToast(splitQty(r.name).base + ' erscheint nur bei ' + listName(r.target.list) + ', ' + r.target.why + '.', 'Für alle Märkte', function(){ store.updateItem(r.id, {target_list: null}); flashText(splitQty(r.name).base + ' erscheint in allen Märkten.'); }, 8000);
-      } else flashText(splitQty(r.name).base + ' → für alle Märkte');
+        showToast(splitQty(r.name).base + ' erscheint nur bei ' + listName(r.target.list) + ', ' + r.target.why + '.', 'Alle passenden', function(){ store.updateItem(r.id, {target_list: null}); flashText(splitQty(r.name).base + ' erscheint in allen passenden Märkten.'); }, 8000);
+      } else { var fn2 = fitNames(r.name); flashText(splitQty(r.name).base + (fn2.length ? ' → ' + fn2.join(', ') : ' passt zu keinem Markt. Ordne es im Artikel zu.')); }
     } else if(r.status === 'routed'){
       var tl = listById(r.list);
       flash(esc(splitQty(r.name).base) + ' → Liste ' + esc(tl.name) + (r.gloss.product ? ' · ' + esc(r.gloss.product) : ''));
@@ -765,7 +790,8 @@ function updateHint(){
   var first = v.split(/[,;\n]+/)[0].trim();
   if(isGen(l)){
     var at = autoTarget(first);
-    hint.innerHTML = at ? '→ nur ' + esc(listName(at.list)) + ' (' + esc(at.why) + ')' : '→ für alle Märkte';
+    var fn = fitNames(first);
+    hint.innerHTML = at ? '→ nur ' + esc(listName(at.list)) + ' (' + esc(at.why) + ')' : fn.length ? '→ ' + esc(fn.join(', ')) : '→ passt zu keinem Markt, ordne es im Artikel zu';
     return;
   }
   hint.innerHTML = catHTML(l, clsf(l, first));
@@ -829,6 +855,7 @@ function itemHTML(i){
   var sq = splitQty(i.name), g = glossFor(i.name), subs = [];
   if(g && g.product) subs.push(g.product);
   if(renderL && !isGen(renderL) && i.list !== renderL.id) subs.push('aus Allgemein');
+  if(renderL && isGen(renderL) && !(i.target && listById(i.target))){ var fl = fitNames(i.name); subs.push(fl.length ? 'bei ' + fl.join(', ') : 'passt zu keinem Markt'); }
   var cls = 'item' + (isDone ? ' done' : '') + (pendingDone[i.id] ? ' checking' : '') + (entering ? ' enter' : '');
   return '<li class="' + cls + '" data-id="' + esc(i.id) + '"' + (entering ? ' data-t="' + t + '"' : '') + '>' +
     '<button class="box-btn" role="checkbox" aria-checked="' + isDone + '" data-act="toggle" data-id="' + esc(i.id) + '" aria-label="' + esc(i.name) + '"><span class="box">' + CHECK + '</span></button>' +
@@ -856,7 +883,7 @@ function renderGeneral(l){
   var its = listItems(l), h = '';
   if(!state.loaded || !its.length){
     h += '<section class="empty"><h2>' + (state.loaded ? 'Allgemeine Liste' : 'Liste wird geladen …') + '</h2>' +
-      '<p>Tragt hier alles ein, was ihr braucht. Jeder Artikel erscheint in allen Marktlisten. Ist er einem Markt zugeordnet, erscheint er nur dort. Zuordnen kann die App selbst (Glossar und Kassenzettel), oder du stellst es im Artikel ein.</p>' +
+      '<p>Tragt hier alles ein, was ihr braucht. Jeder Artikel erscheint in den Märkten, die ihn führen: Lebensmittel in Supermärkten, Schrauben im Baumarkt. Ist er einem Markt zugeordnet, erscheint er nur dort. Zuordnen kann die App selbst (Glossar und Kassenzettel), oder du stellst es im Artikel ein.</p>' +
       (state.loaded ? '<div class="chips">' + ['Bananen', 'Hafermilch', 'Spülmittel', 'Brezn'].map(function(x){ return '<button class="chip" data-act="sample" data-text="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' : '') +
       (state.loaded && !state.dbV6 ? '<p class="tip" style="margin-top:10px">Für die Zuordnung zu einzelnen Märkten fehlt noch ein Datenbank-Update (schema_v6.sql).</p>' : '') + '</section>';
     main.innerHTML = h;
@@ -868,7 +895,7 @@ function renderGeneral(l){
   open.forEach(function(i){ var k = i.target && listById(i.target) ? i.target : ''; (groups[k] = groups[k] || []).push(i); });
   var order = [''].concat(marketLists().map(function(x){ return x.id; })).filter(function(k){ return groups[k] && groups[k].length; });
   h += order.map(function(k){
-    return '<section class="gsec"><div class="stop-h"><h2>' + (k ? 'Nur ' + esc(listName(k)) : 'Für alle Märkte') + '</h2><span class="count">' + groups[k].length + '</span></div>' +
+    return '<section class="gsec"><div class="stop-h"><h2>' + (k ? 'Nur ' + esc(listName(k)) : 'Passende Märkte') + '</h2><span class="count">' + groups[k].length + '</span></div>' +
       '<ul class="items">' + groups[k].map(function(i){ return itemHTML(i); }).join('') + '</ul></section>';
   }).join('');
   if(!order.length) h += '<p class="allset">Alles erledigt.</p>';
@@ -913,7 +940,7 @@ function renderList(){
   }
   if(done.length) h += cartHTML(done);
   if(!genLists().length && state.loaded && !lsGet('manjo-gen-tip')){
-    h += '<div class="gl-box" style="margin-top:14px"><span><b>Neu:</b> eine allgemeine Liste für alles, was ihr braucht. Die Artikel erscheinen in allen Märkten.</span>' +
+    h += '<div class="gl-box" style="margin-top:14px"><span><b>Neu:</b> eine allgemeine Liste für alles, was ihr braucht. Jeder Artikel erscheint in den Märkten, die ihn führen.</span>' +
       '<button class="ghost sm" data-act="gen-create">Anlegen</button><button class="link" data-act="gen-tip-off" style="margin-left:0">Nicht jetzt</button></div>';
   }
   if(!state.shop && its.length <= 3 && !lsGet('manjo-tip-swipe')){
@@ -1236,7 +1263,9 @@ function sheetContent(){
 }
 function assignHTML(it){
   var curT = it.target && listById(it.target) ? it.target : '';
-  return '<h3 class="rc-h">Erscheint in</h3>' + chipsHTML('assign', [['', 'Allen Märkten']].concat(marketLists().map(function(x){ return [x.id, 'Nur ' + x.name]; })), curT) +
+  var fl = fitNames(it.name);
+  return '<h3 class="rc-h">Erscheint in</h3>' + chipsHTML('assign', [['', 'Passenden Märkten']].concat(marketLists().map(function(x){ return [x.id, 'Nur ' + x.name]; })), curT) +
+    (curT ? '' : '<p class="tip">Passend sind gerade: ' + (fl.length ? esc(fl.join(', ')) : 'keine. Wähle einen Markt.') + '</p>') +
     (state.dbV6 ? '' : '<p class="tip">Für die Zuordnung fehlt noch ein Datenbank-Update (schema_v6.sql).</p>');
 }
 function itemGlossHTML(it){
@@ -1507,7 +1536,7 @@ function updateImport(){
   var html = '';
   if(isGen(l)){
     [''].concat(marketLists().map(function(x){ return x.id; })).forEach(function(k){
-      if(groups[k]) html += '<div class="grp"><div class="grp-h"><b>' + (k ? 'Nur ' + esc(listName(k)) : 'Für alle Märkte') + '</b><span>' + groups[k].length + '</span></div><p>' + groups[k].map(esc).join(', ') + '</p></div>';
+      if(groups[k]) html += '<div class="grp"><div class="grp-h"><b>' + (k ? 'Nur ' + esc(listName(k)) : 'Passende Märkte') + '</b><span>' + groups[k].length + '</span></div><p>' + groups[k].map(esc).join(', ') + '</p></div>';
     });
     groups = {};
   }
@@ -1819,13 +1848,13 @@ document.addEventListener('click', function(e){
     if(!ai) return;
     if(!state.dbV6){ flashText('Für die Zuordnung fehlt ein Datenbank-Update: schema_v6.sql in Supabase ausführen.'); return; }
     store.updateItem(ai.id, {target_list: id || null});
-    flashText(splitQty(ai.name).base + (id ? ' erscheint nur bei ' + listName(id) + '.' : ' erscheint in allen Märkten.'));
+    flashText(splitQty(ai.name).base + (id ? ' erscheint nur bei ' + listName(id) + '.' : ' erscheint in allen passenden Märkten.'));
   } else if(act === 'gen-create'){
     lsSet('manjo-gen-tip', '1');
     store.createList('Allgemein', GEN).then(function(nid){
       switchList(nid);
       setView('list');
-      flashText('Allgemeine Liste angelegt. Was du hier einträgst, erscheint in allen Märkten.');
+      flashText('Allgemeine Liste angelegt. Was du hier einträgst, erscheint in den passenden Märkten.');
     }).catch(onWriteError);
   } else if(act === 'gen-tip-off'){
     lsSet('manjo-gen-tip', '1');
