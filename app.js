@@ -1637,6 +1637,17 @@ function setSignup(on){
   $('#authPw').autocomplete = on ? 'new-password' : 'current-password';
   authMsg('');
 }
+/* Adresse der App ohne Anker und Parameter: dorthin führt der Bestätigungslink */
+function appUrl(){ return location.origin + location.pathname; }
+/* Fehler aus dem Bestätigungslink lesbar machen, z. B. abgelaufener Link */
+function readLinkError(){
+  var h = new URLSearchParams(String(location.hash || '').replace(/^#/, '') + '&' + String(location.search || '').replace(/^\?/, ''));
+  var code = h.get('error_code') || h.get('error');
+  if(!code) return '';
+  try{ history.replaceState(null, '', appUrl()); }catch(e){}
+  if(/expired/i.test(code + ' ' + (h.get('error_description') || ''))) return 'Der Bestätigungslink ist abgelaufen oder wurde schon benutzt. Versuch dich anzumelden. Klappt das nicht, registriere dich noch einmal.';
+  return 'Der Bestätigungslink hat nicht funktioniert. Versuch dich anzumelden.';
+}
 async function doAuth(){
   if(!sb) return;
   var email = $('#authEmail').value.trim().toLowerCase(), pw = $('#authPw').value;
@@ -1646,7 +1657,7 @@ async function doAuth(){
   $('#authSubmit').disabled = true;
   try{
     if(signup){
-      var r = await sb.auth.signUp({email: email, password: pw});
+      var r = await sb.auth.signUp({email: email, password: pw, options: {emailRedirectTo: appUrl()}});
       if(r.error) authMsg(/registered/i.test(r.error.message) ? 'Zu dieser Adresse gibt es schon ein Konto. Melde dich an.' : 'Das hat nicht geklappt: ' + r.error.message, true);
       else if(!r.data.session) authMsg('Fast fertig: Wir haben dir eine Bestätigungsmail geschickt.');
     } else {
@@ -1706,13 +1717,18 @@ setInterval(function(){ if(state.authed && state.queue.length) flush(); }, 20000
     $('#authLead').textContent = window.supabase ? 'Trage in config.js die URL und den Schlüssel deines Supabase-Projekts ein.' : 'Die Supabase-Bibliothek konnte nicht geladen werden. Prüfe die Internetverbindung.';
     return;
   }
-  sb = window.supabase.createClient(CFG.url, CFG.key, {auth: {persistSession: true, autoRefreshToken: true, detectSessionInUrl: false}});
+  var linkErr = readLinkError();
+  sb = window.supabase.createClient(CFG.url, CFG.key, {auth: {persistSession: true, autoRefreshToken: true, detectSessionInUrl: true}});
   sb.auth.onAuthStateChange(function(ev, session){
     if(ev === 'SIGNED_OUT') onSignedOut();
     else if(session && !state.authed) onSignedIn(session);
   });
   var s = await sb.auth.getSession();
-  if(s.data && s.data.session) onSignedIn(s.data.session); else showAuth(true);
+  if(s.data && s.data.session) onSignedIn(s.data.session);
+  else {
+    showAuth(true);
+    if(linkErr) authMsg(linkErr, true);
+  }
 })();
 
 render();
