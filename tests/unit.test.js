@@ -5,7 +5,7 @@ const root = path.join(__dirname, '..');
 const load = (files, names) => new Function(files.map(f => fs.readFileSync(path.join(root, f), 'utf8')).join('\n') + ';return {' + names.join(',') + '}')();
 
 const L = load(['lib/classify.js', 'lib/drag.js', 'lib/receipt.js', 'lib/ledger.js', 'lib/items.js'],
-  ['classify', 'TPLS', 'norm', 'dragTarget', 'dragFinal', 'dragShift', 'parseReceipt', 'toCents', 'settleUp', 'catSplit', 'splitQty', 'matchReceipt']);
+  ['classify', 'TPLS', 'norm', 'dragTarget', 'dragFinal', 'dragShift', 'parseReceipt', 'toCents', 'settleUp', 'catSplit', 'splitQty', 'matchReceipt', 'nameMatches', 'pricesFor']);
 
 let fails = 0, count = 0;
 const eq = (got, want, msg) => {
@@ -83,6 +83,26 @@ eq(Object.values(odd.bal).reduce((a, b) => a + b, 0), 0, 'Cent-Rest geht auf');
 const c = L.catSplit(ex, '2026-10', (e, cat) => ({obst: 'Obst & Gemüse'})[cat] || 'Sonstiges');
 eq(c, {map: {'': 3600, 'Obst & Gemüse': 400}, total: 4000}, 'Kategorien ohne Ausgleich');
 eq(L.catSplit(ex, '2026-09', () => 'x'), {map: {}, total: 0}, 'anderer Monat');
+
+
+// --- Preisgedächtnis ---
+eq(L.nameMatches('MILCH 3,5%', 'Milch', L.norm), true, 'Milch trifft Milch');
+eq(L.nameMatches('HAFERMILCH', 'Milch', L.norm), false, 'Milch trifft nicht Hafermilch');
+eq(L.nameMatches('HAFERMI. DRINK', 'Hafermilch', L.norm), true, 'Abkürzung auf dem Bon');
+eq(L.nameMatches('NOMILK HAFER 3,5%', 'NoMilk Hafer', L.norm), true, 'Produktname');
+eq(L.nameMatches('SPUELMITTEL', 'Spülmittel', L.norm), true, 'Umlaut ausgeschrieben');
+eq(L.nameMatches('BAN.', 'Bananen', L.norm), false, 'zu kurze Abkürzung');
+eq(L.nameMatches('GRUENER TEE', 'Grüner Tee', L.norm), true, 'zwei Wörter');
+eq(L.nameMatches('TEE SCHWARZ', 'Grüner Tee', L.norm), false, 'nur ein Wort passt');
+const px = [
+  {list: 'rewe', kind: 'expense', spent: '2026-10-01', lines: [{n: 'HAFERMILCH', c: 129}, {n: 'BANANEN', c: 199}]},
+  {list: 'rewe', kind: 'expense', spent: '2026-10-08', lines: [{n: 'HAFERMI. DRINK', c: 119}]},
+  {list: 'lidl', kind: 'expense', spent: '2026-10-05', lines: [{n: 'NOMILK HAFER 3,5%', c: 95}]},
+  {list: 'lidl', kind: 'settle', spent: '2026-10-06', lines: [{n: 'HAFERMILCH', c: 1}]}
+];
+eq(L.pricesFor(['Hafermilch', 'NOMILK'], px, L.norm).map(o => o.list + ':' + o.c + ':' + o.date), ['lidl:95:2026-10-05', 'rewe:119:2026-10-08'], 'letzter Preis je Markt, günstigster zuerst');
+eq(L.pricesFor(['Bananen'], px, L.norm).map(o => o.list + ':' + o.c), ['rewe:199'], 'ein Markt');
+eq(L.pricesFor(['Kaffee'], px, L.norm), [], 'unbekannt');
 
 console.log(fails ? fails + ' von ' + count + ' Prüfungen fehlgeschlagen' : 'Alle ' + count + ' Prüfungen bestanden');
 process.exitCode = fails ? 1 : 0;

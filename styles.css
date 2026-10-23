@@ -348,3 +348,16 @@ main .tabs .tab .tn{max-width:none;overflow:hidden;text-overflow:ellipsis}
 .rc-note{margin:8px 0 0;padding:8px 10px;border-radius:10px;background:var(--bg);border:1px solid var(--line);font-size:13px;color:var(--ink-2)}
 .rc-err{margin:10px 0 0;padding:8px 10px;border-radius:10px;border:1.5px solid var(--danger);color:var(--danger);font-size:13.5px;font-weight:600}
 .log{margin:0;max-height:220px;overflow:auto;padding:8px 10px;border-radius:10px;background:var(--surface);border:1px solid var(--line);font:12px/1.45 ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink-2)}
+/* Glossar und Preise */
+.nm{display:grid;min-width:0}
+.sub{font-size:12.5px;color:var(--ink-2);line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.app.shop .sub{font-size:13.5px}
+.gl-box{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px;margin:4px 0 0;padding:8px 10px;border-radius:10px;background:var(--bg);border:1px solid var(--line);font-size:13.5px}
+.gl-box span{min-width:0;flex:1 1 160px}
+.prices{display:grid}
+.price{display:flex;align-items:baseline;gap:10px;min-height:36px;padding:6px 0;border-top:1px solid var(--line)}
+.price:first-child{border-top:0}
+.price .pm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.price .pm em{font-style:normal;font-size:11.5px;font-weight:700;padding:1px 6px;margin-left:4px;border-radius:5px;background:var(--accent);color:var(--on-accent)}
+.price .pd{font-size:12.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.price b{font-variant-numeric:tabular-nums;white-space:nowrap}

@@ -13,6 +13,7 @@ w.HTMLElement.prototype.scrollIntoView = function(){};
 
 // ---- nachgebautes Supabase ----
 const db = {lists: [], list_members: [], items: [], expenses: [], profiles: []};
+const dbLater = {products: []};
 const net = {offline: false, failExpense: null};
 let n = 0;
 const ME = {id: 'u1', email: 'me@x.de'};
@@ -133,7 +134,7 @@ const ok = (c, m) => { count++; if(!c){ fails++; console.log('FAIL ' + m); } els
   click(Q('[data-act="clear-done"]')); await sleep(20);
   ok(!Q('#toast').hidden, 'Rückgängig-Meldung erscheint');
   ok(!QA('.item').length, 'Artikel ausgeblendet');
-  click(Q('[data-act="undo"]')); await sleep(20);
+  click(Q('[data-act="toast"]')); await sleep(20);
   ok(QA('.item').length === 1 && Q('#toast').hidden, 'Rückgängig stellt wieder her');
   click(Q('.name-btn')); await sleep(20);
   click(Q('[data-act="delete"]')); await sleep(5300);
@@ -227,6 +228,41 @@ const ok = (c, m) => { count++; if(!c){ fails++; console.log('FAIL ' + m); } els
   click(QA('[data-act="mk-vis"]')[0]); await sleep(20);
   nav('list'); await sleep(20);
   ok(QA('.tab').length === 2 && /Baumarkt/.test(Q('.tab').textContent), 'wieder eingeblendet, Tabs in neuer Reihenfolge');
+
+  // Glossar und Preisgedächtnis (Datenbank-Update 5 ist jetzt da)
+  db.products = [];
+  const L0 = db.lists[0].id, L1 = db.lists[1].id;
+  nav('markets'); await sleep(20);
+  ok(/Glossar/.test(mainText()), 'Glossar unter Märkte');
+  click(Q('[data-act="gloss-new"]')); await sleep(30);
+  type(Q('#gName'), 'Hafermilch'); type(Q('#gProduct'), 'NoMilk Hafer 3,5 %');
+  Q('#gList').value = L1; type(Q('#gTerms'), 'NOMILK');
+  submit(Q('#glossForm')); await sleep(120);
+  ok(db.products.length === 1 && db.products[0].list_id === L1 && db.products[0].product === 'NoMilk Hafer 3,5 %', 'Glossar-Eintrag gespeichert');
+  ok(/NoMilk Hafer 3,5 %/.test(mainText()), 'Eintrag in der Glossar-Liste');
+  nav('list'); click(QA('.tab').find(b => /Supermarkt/.test(b.textContent))); await sleep(30);
+  type(Q('#newItem'), 'Hafermilch'); submit(Q('#addForm')); await sleep(120);
+  const hm = db.items.find(i => i.name === 'Hafermilch');
+  ok(hm && hm.list_id === L1, 'Hafermilch landet laut Glossar auf der anderen Liste');
+  ok(!Q('#toast').hidden && /Hier lassen/.test(Q('#toastBtn').textContent), 'Meldung mit „Hier lassen“');
+  click(Q('#toastBtn')); await sleep(120);
+  ok(db.items.find(i => i.name === 'Hafermilch').list_id === L0, '„Hier lassen“ holt den Artikel zurück');
+  const hmRow = QA('.item').find(li => /Hafermilch/.test(li.textContent));
+  ok(hmRow && hmRow.querySelector('.sub') && hmRow.querySelector('.sub').textContent === 'NoMilk Hafer 3,5 %', 'Produkt steht klein unter dem Namen');
+  db.expenses.push({id: 'px1', list_id: L0, amount_cents: 328, description: 'Bon', payer_email: ME.email, participants: [ME.email], kind: 'expense', spent_on: '2026-10-01', created_at: new Date().toISOString(),
+    lines: [{n: 'NOMILK HAFER 3,5%', c: 129, cat: 'milch'}, {n: 'SPUELMITTEL', c: 199, cat: 'haushalt'}]});
+  db.expenses.push({id: 'px2', list_id: L1, amount_cents: 244, description: 'Bon', payer_email: ME.email, participants: [ME.email], kind: 'expense', spent_on: '2026-10-02', created_at: new Date().toISOString(),
+    lines: [{n: 'NOMILK HAFER', c: 95, cat: 'sonst'}, {n: 'SPÜLMITTEL', c: 149, cat: 'sonst'}]});
+  w.dispatchEvent(new w.Event('online')); await sleep(400);
+  click(QA('.item').find(li => /Hafermilch/.test(li.textContent)).querySelector('.name-btn')); await sleep(30);
+  const pr = QA('.price').map(x => x.textContent.replace(/\s+/g, ' '));
+  ok(pr.length === 2 && /0,95 €/.test(pr[0]) && /günstigster/.test(pr[0]) && /1,29 €/.test(pr[1]), 'Preise je Markt im Artikel, günstigster oben');
+  ok(/Im Glossar/.test(Q('.gl-box').textContent), 'Artikel zeigt Glossar-Eintrag');
+  click(Q('[data-act="close"]')); await sleep(250);
+  type(Q('#newItem'), 'Spülmittel'); submit(Q('#addForm')); await sleep(120);
+  ok(!Q('#toast').hidden && /zuletzt günstiger/.test(Q('#toastText').textContent) && /Verschieben/.test(Q('#toastBtn').textContent), 'Vorschlag: woanders günstiger');
+  click(Q('#toastBtn')); await sleep(120);
+  ok(db.items.find(i => i.name === 'Spülmittel').list_id === L1, '„Verschieben“ legt den Artikel auf die günstigere Liste');
 
   // Einkaufsmodus
   nav('list'); await sleep(20);

@@ -16,7 +16,7 @@ var EYE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="c
 var EYE_OFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1"/></svg>';
 var NAV_INDEX = {list:0, markets:1, bills:2, settings:3, account:4};
 var DB_UPDATE_CODES = ['42P01', '42703', 'PGRST204', 'PGRST205'];
-var APP_VERSION = '2026-10-23.4';
+var APP_VERSION = '2026-10-23.5';
 var LS_LOG = 'manjo-log';
 /* Kleines Protokoll auf dem Gerät: hilft, Fehler zu finden, die man auf dem Handy nicht sieht */
 function logEvent(kind, msg){
@@ -41,7 +41,7 @@ var RM = false;
 try{ RM = window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
 
 var state = {
-  lists: [], items: [], expenses: [], profiles: {},
+  lists: [], items: [], expenses: [], profiles: {}, products: [],
   listId: null, view: 'list', sheet: null,
   mode: 'loading', loaded: false, authed: false,
   me: {id: null, email: ''},
@@ -52,7 +52,7 @@ var state = {
 var sb = null, chan = null, reloadT = null, signup = false, flushing = false, cacheT = null;
 var focusFn = null, openerSel = null, closing = false, pendingRender = false, sheetHtml = '';
 var drag = null, seen = null, pendingDone = {}, enterAt = {};
-var flashT = null, delT = null, undoT = null, undoIds = null, wakeLock = null;
+var flashT = null, delT = null, undoT = null, undoIds = null, wakeLock = null, toastT = null, toastFn = null;
 var swipe = null, swipeBlock = false;
 
 /* ---------- Helfer ---------- */
@@ -249,6 +249,7 @@ function errText(err){
   if(err && err.code === '22008') return 'Das Datum ist ungültig. Bitte das Datum korrigieren.';
   if(needsDbUpdate(err)){
     var m = String(err.message || '') + ' ' + String(err.details || '') + ' ' + String(err.hint || '');
+    if(/products/.test(m)) return 'Für das Glossar fehlt noch ein Datenbank-Update. Bitte schema_v5.sql in Supabase ausführen.';
     if(/spent_on|lines/.test(m)) return 'Der Datenbank fehlt noch ein Update. Bitte schema_v3.sql und danach schema_v4.sql in Supabase ausführen.';
     return 'Der Datenbank fehlt noch ein Update. Bitte schema_v4.sql in Supabase ausführen.';
   }
@@ -284,13 +285,17 @@ async function flush(){
   flushing = false;
   renderHeader();
 }
+/* Änderung auf einen Artikel anwenden; list_id heißt lokal list */
+function applyPatch(it, patch){
+  Object.keys(patch).forEach(function(k){ if(k === 'list_id') it.list = patch[k]; else it[k] = patch[k]; });
+}
 /* Noch nicht gesendete Änderungen auf frisch geladene Daten anwenden */
 function replayQueue(){
   state.queue.forEach(function(op){
     if(op.op === 'ins'){
       if(!findItem(op.row.id)){ var it = normItem(op.row.id, Object.assign({created_at: op.at}, op.row)); if(it) state.items.push(it); }
     } else if(op.op === 'upd'){
-      var x = findItem(op.id); if(x) Object.assign(x, op.patch);
+      var x = findItem(op.id); if(x) applyPatch(x, op.patch);
     } else if(op.op === 'del'){
       state.items = state.items.filter(function(i){ return op.ids.indexOf(i.id) < 0; });
     }
@@ -300,13 +305,13 @@ function saveCache(){
   if(!state.authed || !state.loaded) return;
   clearTimeout(cacheT);
   cacheT = setTimeout(function(){
-    lsSet(cKey(), JSON.stringify({v: 1, lists: state.lists, items: state.items, expenses: state.expenses, profiles: state.profiles}));
+    lsSet(cKey(), JSON.stringify({v: 1, lists: state.lists, items: state.items, expenses: state.expenses, profiles: state.profiles, products: state.products}));
   }, 400);
 }
 function loadCache(){
   var c = lsJSON(cKey(), null);
   if(!c || c.v !== 1) return;
-  state.lists = c.lists || []; state.items = c.items || []; state.expenses = c.expenses || []; state.profiles = c.profiles || {};
+  state.lists = c.lists || []; state.items = c.items || []; state.expenses = c.expenses || []; state.profiles = c.profiles || {}; state.products = c.products || [];
   state.loaded = true;
   replayQueue();
   ensureCurrent();
@@ -316,6 +321,8 @@ function upsertItem(it){
   var i = state.items.findIndex(function(x){ return x.id === it.id; });
   if(i < 0) state.items.push(it); else state.items[i] = it;
 }
+/* Abfragen für Zusatzfunktionen dürfen fehlschlagen, ohne das Laden zu stoppen */
+function optional(q){ return Promise.resolve(q).then(function(r){ return r || {error: {message: 'leer'}}; }, function(e){ return {error: e}; }); }
 async function loadAll(){
   if(!sb || !state.authed) return;
   try{
@@ -324,7 +331,8 @@ async function loadAll(){
       sb.from('list_members').select('list_id,email'),
       sb.from('items').select('*').order('created_at').range(0, 4999),
       sb.from('expenses').select('*').order('created_at').range(0, 4999),
-      sb.from('profiles').select('email,display_name')
+      optional(sb.from('profiles').select('email,display_name')),
+      optional(sb.from('products').select('*').order('created_at'))
     ]);
     for(var k = 0; k < 4; k++){ if(r[k].error) throw r[k].error; }
     var mem = {};
@@ -337,6 +345,7 @@ async function loadAll(){
       r[4].data.forEach(function(p){ if(p.email && p.display_name) pf[String(p.email).toLowerCase()] = String(p.display_name); });
       state.profiles = pf;
     }
+    if(!r[5].error && r[5].data) state.products = r[5].data.map(normProduct);
     replayQueue();
     state.loaded = true;
     state.mode = 'live';
@@ -370,6 +379,7 @@ function subscribe(){
     .on('postgres_changes', {event:'*', schema:'public', table:'list_members'}, function(){ scheduleReload(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'expenses'}, function(){ scheduleReload(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'profiles'}, function(){ scheduleReload(); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'products'}, function(){ scheduleReload(); })
     .subscribe(function(status){
       if(status === 'SUBSCRIBED'){ state.mode = 'live'; renderHeader(); scheduleReload(0); flush(); }
       else if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED'){ state.mode = 'lost'; renderHeader(); }
@@ -382,10 +392,11 @@ var store = {
     upsertItem({id: id, name: item.name, cat: item.cat, done: false, ts: Date.now(), list: item.list});
     render();
     enqueue({op: 'ins', row: row, at: at});
+    return id;
   },
   updateItem: function(id, patch){
     var it = findItem(id);
-    if(it) Object.assign(it, patch);
+    if(it) applyPatch(it, patch);
     render();
     enqueue({op: 'upd', id: id, patch: patch});
   },
@@ -473,26 +484,93 @@ var store = {
   }
 };
 
+/* ---------- Glossar und Preise ---------- */
+function normProduct(d){
+  return {id: String(d.id), list: String(d.list_id), name: String(d.name || ''), product: String(d.product || ''), terms: String(d.terms || ''), ts: Date.parse(d.created_at) || 0};
+}
+function listName(id){ var l = listById(id); return l ? l.name : 'Markt'; }
+/* Glossar-Eintrag zu einem Artikelnamen (ohne Menge), der neueste gewinnt */
+function glossFor(name){
+  var key = baseKey(name), hit = null;
+  state.products.forEach(function(p){ if(norm(p.name) === key && listById(p.list) && (!hit || p.ts > hit.ts)) hit = p; });
+  return hit;
+}
+function termsFor(name, g){
+  var t = [splitQty(name).base];
+  if(g === undefined) g = glossFor(name);
+  if(g){
+    if(g.name) t.push(g.name);
+    g.terms.split(',').forEach(function(x){ x = x.trim(); if(x) t.push(x); });
+    if(g.product) t.push(g.product);
+  }
+  return t;
+}
+function pricesOf(name, g){ return pricesFor(termsFor(name, g), state.expenses, norm); }
+function pricesHTML(obs){
+  if(!obs.length) return '<p class="tip">Noch kein Preis bekannt. Sobald ihr Kassenzettel fotografiert, merkt sich die App den Preis je Markt.</p>';
+  return '<div class="prices">' + obs.map(function(o, i){
+    return '<div class="price' + (i === 0 && obs.length > 1 ? ' best' : '') + '"><span class="pm">' + esc(listName(o.list)) + (i === 0 && obs.length > 1 ? ' <em>günstigster</em>' : '') + '</span>' +
+      '<span class="pd">' + fmtISO(o.date) + '</span><b>' + money(o.c) + '</b></div>';
+  }).join('') + '</div><p class="tip">Letzter Preis je Markt laut euren Kassenzetteln. Packungsgrößen können abweichen.</p>';
+}
+/* Meldung mit einer Aktion (z. B. "Hier lassen" oder "Verschieben") */
+function showToast(text, label, fn, ms){
+  commitUndo();
+  clearTimeout(toastT);
+  $('#toastText').textContent = text;
+  $('#toastBtn').textContent = label;
+  toastFn = fn;
+  toast.hidden = false;
+  toastT = setTimeout(hideToast, ms || 7000);
+}
+function hideToast(){ clearTimeout(toastT); toast.hidden = true; toastFn = null; }
+function moveItem(id, listId){
+  var it = findItem(id), l2 = listById(listId);
+  if(!it || !l2 || it.list === listId) return;
+  var key = baseKey(it.name);
+  if(listItems(l2).some(function(i){ return i.id !== id && baseKey(i.name) === key; })){ flashText(splitQty(it.name).base + ' steht auf der Liste ' + l2.name + ' schon.'); return; }
+  store.updateItem(id, {list_id: listId, cat: clsf(l2, it.name)});
+  flashText(splitQty(it.name).base + ' liegt jetzt auf der Liste ' + l2.name + '.');
+}
+store.saveProduct = function(p){
+  var row = {list_id: p.list, name: p.name, product: p.product, terms: p.terms};
+  var q = p.id ? sb.from('products').update(row).eq('id', p.id) : sb.from('products').insert(row);
+  if(p.id){ var ex = state.products.filter(function(x){ return x.id === p.id; })[0]; if(ex) Object.assign(ex, {list: p.list, name: p.name, product: p.product, terms: p.terms}); }
+  else state.products.push({id: 'tmp-' + uuid(), list: p.list, name: p.name, product: p.product, terms: p.terms, ts: Date.now()});
+  render();
+  return withTimeout(q).then(function(r){
+    scheduleReload(0);
+    if(r.error){ logEvent('Abgelehnt', errInfo(r.error)); return {ok: false, error: r.error}; }
+    return {ok: true};
+  }, function(err){ scheduleReload(0); return {ok: false, error: err}; });
+};
+store.removeProduct = function(id){
+  state.products = state.products.filter(function(x){ return x.id !== id; });
+  render();
+  return sb.from('products').delete().eq('id', id).then(function(r){ if(r.error) onWriteError(r.error); });
+};
+
 /* ---------- Aktionen ---------- */
 function addItem(l, raw, batch){
   var name = cap(raw.trim().replace(/\s+/g, ' '));
   if(!name) return null;
   var sq = splitQty(name), key = norm(sq.base);
+  var g = glossFor(name), target = (g && g.list !== l.id && listById(g.list)) || l;
   if(batch){ if(batch[key]) return {status:'dup', name:name}; batch[key] = 1; }
-  var dup = listItems(l).find(function(i){ return baseKey(i.name) === key; });
+  var dup = listItems(target).find(function(i){ return baseKey(i.name) === key; });
   if(dup){
     var patch = {};
     if(dup.done) patch.done = false;
     if(sq.qty && name !== dup.name) patch.name = name;
     if(Object.keys(patch).length){
       store.updateItem(dup.id, patch);
-      return {status: dup.done ? 'back' : 'qty', name: patch.name || dup.name};
+      return {status: dup.done ? 'back' : 'qty', name: patch.name || dup.name, list: target.id};
     }
-    return {status:'dup', name:dup.name};
+    return {status:'dup', name:dup.name, list: target.id};
   }
-  var c = clsf(l, name);
-  store.addItem({name: name, cat: c, list: l.id});
-  return {status:'added', name: name, cat: c};
+  var c = clsf(target, name);
+  var id = store.addItem({name: name, cat: c, list: target.id});
+  return {status: target === l ? 'added' : 'routed', id: id, name: name, cat: c, list: target.id, from: l.id, gloss: g};
 }
 function addFromText(text){
   var l = cur();
@@ -501,15 +579,31 @@ function addFromText(text){
   var batch = {};
   var res = parts.map(function(p){ return addItem(l, p, batch); }).filter(Boolean);
   if(!res.length) return;
+  var elsewhere = function(r){ return r.list && r.list !== l.id ? ' (Liste ' + listName(r.list) + ')' : ''; };
   if(res.length === 1){
     var r = res[0];
-    if(r.status === 'added') flash(esc(r.name) + ' → ' + catHTML(l, r.cat));
-    else if(r.status === 'back') flashText(r.name + ' ist wieder auf der Liste.');
-    else if(r.status === 'qty') flashText('Menge geändert: ' + r.name);
-    else flashText(r.name + ' steht schon auf der Liste.');
+    if(r.status === 'added'){
+      flash(esc(r.name) + ' → ' + catHTML(l, r.cat));
+      suggestCheaper(r.id, r.name, l);
+    } else if(r.status === 'routed'){
+      var tl = listById(r.list);
+      flash(esc(splitQty(r.name).base) + ' → Liste ' + esc(tl.name) + (r.gloss.product ? ' · ' + esc(r.gloss.product) : ''));
+      showToast(splitQty(r.name).base + ' liegt laut Glossar auf der Liste ' + tl.name + '.', 'Hier lassen', function(){ moveItem(r.id, r.from); }, 8000);
+    }
+    else if(r.status === 'back') flashText(r.name + ' ist wieder auf der Liste' + elsewhere(r) + '.');
+    else if(r.status === 'qty') flashText('Menge geändert: ' + r.name + elsewhere(r));
+    else flashText(r.name + ' steht schon auf der Liste' + elsewhere(r) + '.');
   } else {
-    flashText(res.filter(function(r){ return r.status !== 'dup'; }).length + ' Artikel hinzugefügt.');
+    var nAdd = res.filter(function(r){ return r.status !== 'dup'; }).length, nRt = res.filter(function(r){ return r.status === 'routed'; }).length;
+    flashText(nAdd + ' Artikel hinzugefügt' + (nRt ? ', ' + nRt + ' davon laut Glossar auf andere Listen.' : '.'));
   }
+}
+/* Ohne Glossar: liegt der letzte bekannte Preis woanders deutlich niedriger, Verschieben anbieten */
+function suggestCheaper(id, name, l){
+  if(!id) return;
+  var obs = pricesOf(name, null), here = obs.filter(function(o){ return o.list === l.id; })[0], best = obs[0];
+  if(!here || !best || best.list === l.id || !listById(best.list) || best.c > here.c * 0.97) return;
+  showToast('Bei ' + listName(best.list) + ' zuletzt günstiger: ' + money(best.c) + ' statt ' + money(here.c) + '.', 'Verschieben', function(){ moveItem(id, best.list); }, 9000);
 }
 function moveStation(sid, to){
   var l = cur();
@@ -534,7 +628,10 @@ function softDelete(ids, label){
   commitUndo();
   ids.forEach(function(id){ state.gone[id] = 1; });
   undoIds = ids.slice();
+  clearTimeout(toastT);
   $('#toastText').textContent = label;
+  $('#toastBtn').textContent = 'Rückgängig';
+  toastFn = undo;
   toast.hidden = false;
   undoT = setTimeout(commitUndo, 5000);
   render();
@@ -544,7 +641,7 @@ function commitUndo(){
   clearTimeout(undoT);
   var ids = undoIds;
   undoIds = null;
-  toast.hidden = true;
+  hideToast();
   ids.forEach(function(id){ delete state.gone[id]; });
   store.removeItems(ids);
 }
@@ -553,7 +650,7 @@ function undo(){
   clearTimeout(undoT);
   undoIds.forEach(function(id){ delete state.gone[id]; });
   undoIds = null;
-  toast.hidden = true;
+  hideToast();
   announce('Wiederhergestellt.');
   render();
 }
@@ -670,12 +767,13 @@ function itemHTML(i){
   var t = enterAt[i.id];
   if(t === undefined && seen && !seen.has(i.id)){ t = enterAt[i.id] = Date.now(); }
   var entering = t !== undefined && Date.now() - t < 240;
-  var sq = splitQty(i.name);
+  var sq = splitQty(i.name), g = glossFor(i.name);
   var cls = 'item' + (isDone ? ' done' : '') + (pendingDone[i.id] ? ' checking' : '') + (entering ? ' enter' : '');
   return '<li class="' + cls + '" data-id="' + esc(i.id) + '"' + (entering ? ' data-t="' + t + '"' : '') + '>' +
     '<button class="box-btn" role="checkbox" aria-checked="' + isDone + '" data-act="toggle" data-id="' + esc(i.id) + '" aria-label="' + esc(i.name) + '"><span class="box">' + CHECK + '</span></button>' +
     '<button class="name-btn" data-act="edit" data-id="' + esc(i.id) + '" aria-label="' + esc(i.name) + ' bearbeiten">' +
-      (sq.qty ? '<span class="qty">' + esc(sq.qty) + '</span>' : '') + '<span class="name">' + esc(cap(sq.base)) + '</span></button></li>';
+      (sq.qty ? '<span class="qty">' + esc(sq.qty) + '</span>' : '') + '<span class="nm"><span class="name">' + esc(cap(sq.base)) + '</span>' +
+      (g && g.product ? '<span class="sub">' + esc(g.product) + '</span>' : '') + '</span></button></li>';
 }
 function emptyNoList(){
   var waiting = !state.loaded;
@@ -745,7 +843,20 @@ function renderMarkets(){
       '<button class="mk-btn" data-act="mk-down" data-id="' + esc(l.id) + '" aria-label="' + esc(l.name) + ' nach unten"' + (i === ol.length - 1 ? ' disabled' : '') + '>' + DOWN + '</button>' +
       '<button class="mk-btn" data-act="mk-vis" data-id="' + esc(l.id) + '" aria-pressed="' + !off + '" aria-label="' + esc(l.name) + (off ? ' in den Tabs zeigen' : ' in den Tabs ausblenden') + '">' + (off ? EYE_OFF : EYE) + '</button></div>';
   });
+  if(ol.length) h += glossaryHTML();
   main.innerHTML = h;
+}
+function glossaryHTML(){
+  var ps = state.products.filter(function(p){ return listById(p.list); }).sort(function(a, b){ return a.name.localeCompare(b.name, 'de'); });
+  var h = '<div class="bhead" style="margin-top:22px"><h2>Glossar</h2><button class="sheet-btn" data-act="gloss-new">' + PLUS + ' Eintrag</button></div>';
+  h += '<p class="tip">Ein Begriff steht für ein bestimmtes Produkt und einen Markt. Beispiel: Hafermilch ist immer NoMilk Hafer 3,5 % von Lidl. Gilt für alle, die den Markt sehen.</p>';
+  if(!ps.length) h += '<p class="tip">Noch keine Einträge. Du kannst auch in einem Artikel auf „Im Glossar festlegen“ tippen.</p>';
+  ps.forEach(function(p){
+    var obs = pricesOf(p.name, p), last = obs.filter(function(o){ return o.list === p.list; })[0] || obs[0];
+    var meta = (p.product ? p.product + ' · ' : '') + listName(p.list) + (last ? ' · zuletzt ' + money(last.c) + (last.list !== p.list ? ' bei ' + listName(last.list) : '') : '');
+    h += '<div class="mk"><button class="mk-main" data-act="gloss-open" data-id="' + esc(p.id) + '"><b>' + esc(p.name) + '</b><span>' + esc(meta) + '</span></button></div>';
+  });
+  return h;
 }
 
 function billHead(){
@@ -973,11 +1084,18 @@ function sheetContent(){
     return {title: 'Artikel bearbeiten', sub: 'Name und Menge ändern, zum Beispiel „2 Milch“, oder eine andere Station wählen. Die App merkt sich die Station für diesen Artikel.',
       body: '<form id="itemForm" class="inline-form" autocomplete="off"><label class="sr" for="itemName">Name</label>' +
         '<input class="field" id="itemName" maxlength="120" value="' + esc(it.name) + '"><button class="ibtn" type="submit" aria-label="Name speichern">' + TICK + '</button></form>' +
+        itemGlossHTML(it) +
+        '<h3 class="rc-h">Preise</h3>' + pricesHTML(pricesOf(it.name)) +
+        '<h3 class="rc-h">Station</h3>' +
         '<ul class="cat-list">' + il.stations.map(function(st, idx){
           var c = st.id === curCat;
           return '<li><button class="cat-btn" data-act="cat" data-cat="' + esc(st.id) + '"' + (c ? ' aria-current="true"' : '') + '>' +
             '<span class="badge sm" aria-hidden="true">' + (idx + 1) + '</span><span class="t">' + esc(st.name) + '</span>' + (c ? TICK : '') + '</button></li>';
         }).join('') + '</ul><button class="danger" data-act="delete">Artikel löschen</button>'};
+  }
+  if(s.type === 'gloss'){
+    return {title: s.id ? 'Glossar-Eintrag' : 'Neuer Glossar-Eintrag', sub: 'Lege fest, welches Produkt mit einem Begriff gemeint ist und wo ihr es kauft. Tippt jemand den Begriff in eine Liste, landet er automatisch auf der Liste dieses Markts.',
+      body: glossBody(s)};
   }
   if(s.type === 'new'){
     return {title: 'Neuer Markt', sub: 'Die Vorlage legt Stationen und Stichwörter an. Alles lässt sich später ändern.',
@@ -1005,6 +1123,58 @@ function sheetContent(){
     return {title: title, sub: sub, body: rcpBody(r)};
   }
   return null;
+}
+function itemGlossHTML(it){
+  var g = glossFor(it.name);
+  if(g) return '<div class="gl-box"><span>Im Glossar: <b>' + esc(g.product || g.name) + '</b>, kaufen bei <b>' + esc(listName(g.list)) + '</b></span>' +
+    '<button class="ghost sm" data-act="gloss-item">Ändern</button></div>';
+  return '<div class="gl-box"><span>Immer dasselbe Produkt oder derselbe Markt?</span><button class="ghost sm" data-act="gloss-item">Im Glossar festlegen</button></div>';
+}
+function glossBody(s){
+  var ol = orderedLists();
+  var h = '<form id="glossForm" autocomplete="off">' +
+    '<label class="field-l">Begriff auf der Liste<input class="field" id="gName" maxlength="60" value="' + esc(s.name) + '" placeholder="z. B. Hafermilch"></label>' +
+    '<label class="field-l" style="margin-top:8px">Genaues Produkt<input class="field" id="gProduct" maxlength="120" value="' + esc(s.product) + '" placeholder="z. B. NoMilk Hafer 3,5 % Fett"></label>' +
+    '<label class="field-l" style="margin-top:8px">Kaufen bei<select class="field" id="gList">' + ol.map(function(x){
+      return '<option value="' + esc(x.id) + '"' + (x.id === s.list ? ' selected' : '') + '>' + esc(x.name) + '</option>';
+    }).join('') + '</select></label>' +
+    '<label class="field-l" style="margin-top:8px">So steht es auf dem Kassenzettel (freiwillig)<input class="field" id="gTerms" maxlength="200" value="' + esc(s.terms) + '" placeholder="z. B. NOMILK HAFER, mehrere mit Komma"></label>' +
+    '<p class="tip" style="margin-top:6px">Damit findet die App den Preis auch, wenn der Kassenzettel das Produkt anders abkürzt.</p>';
+  if(s.name) h += '<h3 class="rc-h">Preise</h3>' + pricesHTML(pricesFor(termsFor(s.name, {name: s.name, product: s.product, terms: s.terms}), state.expenses, norm));
+  h += '<p class="rc-err" id="glErr" role="alert" hidden></p>' +
+    '<button class="sheet-btn primary" type="submit" style="margin-top:12px">Speichern</button></form>' +
+    (s.id ? '<button class="danger" data-act="gloss-del" data-id="' + esc(s.id) + '">Aus dem Glossar löschen</button>' : '');
+  return h;
+}
+function openGloss(entry, from){
+  var it = from ? findItem(from) : null;
+  var s = entry ? {type: 'gloss', id: entry.id, name: entry.name, product: entry.product, list: entry.list, terms: entry.terms, from: from || null}
+                : {type: 'gloss', id: null, name: it ? cap(splitQty(it.name).base) : '', product: '', list: it ? it.list : (state.listId || ''), terms: '', from: from || null};
+  openSheet(s, null, entry || it ? '#gProduct' : '#gName');
+}
+function saveGloss(){
+  var s = state.sheet;
+  if(!s || s.type !== 'gloss') return;
+  var name = cap(($('#gName').value || '').trim().replace(/\s+/g, ' '));
+  var product = ($('#gProduct').value || '').trim().replace(/\s+/g, ' ');
+  var list = $('#gList').value, terms = ($('#gTerms').value || '').trim();
+  var err = $('#glErr');
+  var fail = function(msg){ if(err){ err.textContent = msg; err.hidden = false; } else flashText(msg); };
+  if(!name){ fail('Bitte einen Begriff eingeben, zum Beispiel Hafermilch.'); return; }
+  if(!listById(list)){ fail('Bitte einen Markt wählen.'); return; }
+  var key = norm(splitQty(name).base), id = s.id;
+  if(!id){ var same = state.products.filter(function(x){ return norm(x.name) === key && x.id.indexOf('tmp-') !== 0; })[0]; if(same) id = same.id; }
+  var from = s.from;
+  var btn = overlay.querySelector('#glossForm button[type="submit"]');
+  if(btn){ btn.disabled = true; btn.textContent = 'Speichert …'; }
+  store.saveProduct({id: id, list: list, name: name, product: product, terms: terms}).then(function(res){
+    if(!res.ok){ if(btn){ btn.disabled = false; btn.textContent = 'Speichern'; } fail(errText(res.error)); return; }
+    var msg = 'Glossar: ' + name + (product ? ' = ' + product : '') + ', kaufen bei ' + listName(list) + '.';
+    closeSheet();
+    var it = from && findItem(from);
+    if(it && it.list !== list){ moveItem(it.id, list); }
+    flashText(msg);
+  });
 }
 function rcpBody(r){
   var l = listById(r.list), ppl = people(l);
@@ -1449,8 +1619,10 @@ document.addEventListener('click', function(e){
     input.value = ''; autosize();
   } else if(act === 'shop'){
     setShop(!state.shop);
-  } else if(act === 'undo'){
-    undo();
+  } else if(act === 'toast'){
+    var tf = toastFn;
+    if(tf === undo){ undo(); }
+    else { hideToast(); if(tf) tf(); }
   } else if(act === 'bill-tab'){
     state.billTab = b.dataset.tab;
     state.confirmSettle = null;
@@ -1571,6 +1743,18 @@ document.addEventListener('click', function(e){
     readRcp();
     state.rcp.lines.splice(+b.dataset.i, 1);
     rebuildSheet();
+  } else if(act === 'gloss-new'){
+    openGloss(null, null);
+  } else if(act === 'gloss-open'){
+    var ge = state.products.filter(function(x){ return x.id === id; })[0];
+    if(ge) openGloss(ge, null);
+  } else if(act === 'gloss-item'){
+    var gi = state.sheet && findItem(state.sheet.id);
+    if(gi){ if(!saveItemName(gi)) return; openGloss(glossFor(gi.name), gi.id); }
+  } else if(act === 'gloss-del'){
+    var gd = state.products.filter(function(x){ return x.id === id; })[0];
+    closeSheet();
+    if(gd){ store.removeProduct(gd.id); flashText(gd.name + ' aus dem Glossar gelöscht.'); }
   } else if(act === 'log-copy'){
     var txt = 'manjo ' + APP_VERSION + ' · ' + navigator.userAgent + '\n' + lsJSON(LS_LOG, []).map(function(x){ return x.t + '  ' + x.k + ': ' + x.m; }).join('\n');
     var okc = function(){ flashText('Protokoll kopiert.'); }, failc = function(){ flashText('Kopieren ging nicht. Markiere den Text und kopiere ihn von Hand.'); };
@@ -1706,6 +1890,9 @@ document.addEventListener('submit', function(e){
     if(state.accessExtra.indexOf(aem) < 0 && aem !== state.me.email) state.accessExtra.push(aem);
     flashText('Hake jetzt die Märkte an, die ' + aem + ' sehen darf.');
     render();
+  } else if(f.id === 'glossForm'){
+    e.preventDefault();
+    saveGloss();
   } else if(f.id === 'nameForm'){
     e.preventDefault();
     var mn = $('#myName');
@@ -1781,7 +1968,7 @@ function onSignedOut(){
   commitUndo();
   state.authed = false;
   state.me = {id: null, email: ''};
-  state.lists = []; state.items = []; state.expenses = []; state.profiles = {}; state.queue = [];
+  state.lists = []; state.items = []; state.expenses = []; state.profiles = {}; state.products = []; state.queue = [];
   state.listId = null; state.accessExtra = []; state.gone = {};
   state.loaded = false; state.view = 'list'; state.sheet = null; state.rcp = null; state.mode = 'loading'; state.confirmOut = false;
   if(state.shop) setShop(false);

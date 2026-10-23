@@ -48,3 +48,10 @@ Einmalig im Supabase-Projekt den Inhalt von `schema_v4.sql` im SQL Editor ausfü
 - **Ohne Netz:** Artikel und Häkchen werden gespeichert und gesendet, sobald wieder Verbindung besteht.
 - **Märkte:** Reihenfolge und Sichtbarkeit der Tabs stellst du unter Märkte ein (gilt pro Gerät).
 - **Rechnungen** gelten für alle Märkte zusammen. Mit den Chips filterst du auf einen Markt. Ein Tipp auf eine Ausgabe öffnet sie zum Bearbeiten.
+
+## Update: Glossar und Preisgedächtnis
+
+Einmalig im Supabase-Projekt den Inhalt von `schema_v5.sql` im SQL Editor ausführen. Danach:
+
+- **Glossar** unter Märkte: Ein Begriff wie „Hafermilch“ steht für ein genaues Produkt („NoMilk Hafer 3,5 %“) und einen Markt. Tippt jemand den Begriff in eine Liste, landet er auf der Liste dieses Markts. Mit „Hier lassen“ bleibt er, wo er eingetippt wurde.
+- **Preise:** Ein Tipp auf einen Artikel zeigt den letzten Preis je Markt aus euren Kassenzetteln. Ist ein Artikel woanders günstiger, schlägt die App „Verschieben“ vor.
