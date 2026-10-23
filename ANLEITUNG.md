@@ -64,3 +64,7 @@ Einmalig im Supabase-Projekt den Inhalt von `schema_v6.sql` im SQL Editor ausfü
 - Was dort steht, erscheint in den **Märkten, die es führen**, einsortiert nach deren Route: Lebensmittel nur in Supermärkten, Schrauben im Baumarkt, Spülmittel im Supermarkt und in der Drogerie. Unbekanntes landet im Supermarkt. Die Allgemein-Liste ist nach Stationen sortiert (Obst, Brot, Milch …), und was ihr direkt in einem Markt eintragt, erscheint dort ebenfalls (mit „nur <Markt>“). Ist ein Artikel einem Markt zugeordnet, erscheint er **nur dort**.
 - Zugeordnet wird automatisch über das Glossar oder, wenn die Kassenzettel denselben Artikel in mindestens zwei Märkten zeigen und einer mindestens 10 % günstiger ist. Im Artikel lässt sich die Zuordnung jederzeit umstellen („Erscheint in“).
 - Abhaken in einem Markt hakt den Artikel auch in der allgemeinen Liste ab. Die allgemeine Liste selbst bleibt vollständig.
+
+
+## Update: Markt im Text
+Schreibe den Marktnamen einfach dazu, zum Beispiel „Hafermilch Lidl“ oder „bei Rewe Brot“. Der Artikel kommt direkt in diese Liste, der Marktname wird gestrichen. Das geht auch in der Allgemein-Liste und beim Import.

@@ -320,6 +320,15 @@ const ok = (c, m) => { count++; if(!c){ fails++; console.log('FAIL ' + m); } els
   const jRow = QA('.item').find(li => /Joghurt/.test(li.textContent));
   ok(jRow && /nur Supermarkt/.test(jRow.textContent) && /Milch/.test(jRow.closest('.gsec').textContent), 'direkt im Markt eingetragen: auch in Allgemein, einsortiert');
 
+  // Marktname im Text: direkt in diese Liste, Name gestrichen
+  click(tabBy(/Allgemein/)); await sleep(30);
+  type(Q('#newItem'), 'Skyr Baumarkt'); ok(/→ Baumarkt · Skyr/.test(Q('#hint').textContent), 'Hinweis: Marktname erkannt');
+  submit(Q('#addForm')); await sleep(120);
+  const sk = db.items.find(i => i.name === 'Skyr');
+  ok(sk && sk.list_id === L1 && !db.items.some(i => /Baumarkt/.test(i.name)), 'Skyr direkt im Baumarkt, Marktname gestrichen');
+  type(Q('#newItem'), 'bei Supermarkt Mandeln'); submit(Q('#addForm')); await sleep(120);
+  ok(db.items.some(i => i.name === 'Mandeln' && i.list_id !== G.id && i.list_id !== L1), 'Präfix „bei Supermarkt“ erkannt');
+
   // Einkaufsmodus
   nav('list'); await sleep(20);
   click(Q('#shopBtn')); await sleep(30);

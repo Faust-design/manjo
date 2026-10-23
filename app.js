@@ -16,7 +16,7 @@ var EYE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="c
 var EYE_OFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1"/></svg>';
 var NAV_INDEX = {list:0, markets:1, bills:2, settings:3, account:4};
 var DB_UPDATE_CODES = ['42P01', '42703', 'PGRST204', 'PGRST205'];
-var APP_VERSION = '2026-10-23.8';
+var APP_VERSION = '2026-10-23.9';
 var GEN = 'allgemein';
 var LS_LOG = 'manjo-log';
 /* Kleines Protokoll auf dem Gerät: hilft, Fehler zu finden, die man auf dem Handy nicht sieht */
@@ -617,12 +617,27 @@ store.removeProduct = function(id){
 };
 
 /* ---------- Aktionen ---------- */
+/* „Hafermilch Lidl“, „bei Rewe Brot“: Marktname im Text → direkt in diese Liste, Name wird gestrichen */
+function stripMarket(raw){
+  var txt = String(raw).trim().replace(/\s+/g, ' ');
+  var ms = marketLists().slice().sort(function(a, b){ return String(b.name).length - String(a.name).length; });
+  for(var k = 0; k < ms.length; k++){
+    var nm = String(ms[k].name).trim();
+    if(!nm) continue;
+    var re = new RegExp('(^|\\s)(?:(?:bei|von|im|in)\\s+|@)?' + nm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?=\\s|$)', 'i');
+    if(!re.test(txt)) continue;
+    var rest = txt.replace(re, ' ').replace(/\s+/g, ' ').trim();
+    if(rest) return {list: ms[k], name: rest};
+  }
+  return null;
+}
 function addItem(l, raw, batch){
-  var name = cap(raw.trim().replace(/\s+/g, ' '));
+  var sm = stripMarket(raw);
+  var name = cap((sm ? sm.name : raw).trim().replace(/\s+/g, ' '));
   if(!name) return null;
   var sq = splitQty(name), key = norm(sq.base);
   if(batch){ if(batch[key]) return {status:'dup', name:name}; batch[key] = 1; }
-  if(isGen(l)){
+  if(isGen(l) && !sm){
     var dg = listItems(l).find(function(i){ return baseKey(i.name) === key; });
     if(dg){
       var pg = {};
@@ -635,7 +650,7 @@ function addItem(l, raw, batch){
     var gid = store.addItem({name: name, cat: 'sonst', list: l.id, target: at ? at.list : null});
     return {status: 'gen', id: gid, name: name, target: at};
   }
-  var g = glossFor(name), gt = g && listById(g.list), target = (gt && !isGen(gt) && g.list !== l.id && gt) || l;
+  var g = glossFor(name), gt = g && listById(g.list), target = sm ? sm.list : ((gt && !isGen(gt) && g.list !== l.id && gt) || l);
   var dup = viewItems(target).find(function(i){ return baseKey(i.name) === key; });
   if(dup){
     var patch = {};
@@ -649,7 +664,7 @@ function addItem(l, raw, batch){
   }
   var c = clsf(target, name);
   var id = store.addItem({name: name, cat: c, list: target.id});
-  return {status: target === l ? 'added' : 'routed', id: id, name: name, cat: c, list: target.id, from: l.id, gloss: g};
+  return {status: target === l ? 'added' : (sm ? 'market' : 'routed'), id: id, name: name, cat: c, list: target.id, from: l.id, gloss: g};
 }
 function addFromText(text){
   var l = cur();
@@ -669,6 +684,8 @@ function addFromText(text){
         flashText(splitQty(r.name).base + ' → nur ' + listName(r.target.list) + ' (' + r.target.why + ')');
         showToast(splitQty(r.name).base + ' erscheint nur bei ' + listName(r.target.list) + ', ' + r.target.why + '.', 'Alle passenden', function(){ store.updateItem(r.id, {target_list: null}); flashText(splitQty(r.name).base + ' erscheint in allen passenden Märkten.'); }, 8000);
       } else { var fn2 = fitNames(r.name); flashText(splitQty(r.name).base + (fn2.length ? ' → ' + fn2.join(', ') : ' passt zu keinem Markt. Ordne es im Artikel zu.')); }
+    } else if(r.status === 'market'){
+      flash(esc(splitQty(r.name).base) + ' → Liste ' + esc(listName(r.list)) + ' · ' + catHTML(listById(r.list), r.cat));
     } else if(r.status === 'routed'){
       var tl = listById(r.list);
       flash(esc(splitQty(r.name).base) + ' → Liste ' + esc(tl.name) + (r.gloss.product ? ' · ' + esc(r.gloss.product) : ''));
@@ -795,6 +812,8 @@ function updateHint(){
   if(!state.authed || state.view !== 'list' || !l || !v){ hint.hidden = true; hint.textContent = ''; return; }
   hint.hidden = false;
   var first = v.split(/[,;\n]+/)[0].trim();
+  var hm0 = stripMarket(first);
+  if(hm0){ hint.innerHTML = '→ ' + esc(hm0.list.name) + ' · ' + esc(cap(hm0.name)); return; }
   if(isGen(l)){
     var at = autoTarget(first);
     var fn = fitNames(first);
