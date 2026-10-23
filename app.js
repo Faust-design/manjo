@@ -704,10 +704,11 @@ function renderMarkets(){
 }
 
 function billHead(){
-  var tabs = [['foto', 'Fotografieren'], ['saldo', 'Saldo'], ['kat', 'Kategorien']];
+  var tabs = [['foto', 'Fotografieren', 'Foto'], ['saldo', 'Saldo', 'Saldo'], ['kat', 'Kategorien', 'Kategorien']];
   var h = '<div class="bhead"><h2>Rechnungen</h2></div>';
   h += '<div class="tabs" role="tablist" aria-label="Rechnungen">' + tabs.map(function(t){
-    return '<button class="tab" role="tab" aria-selected="' + (state.billTab === t[0]) + '" data-act="bill-tab" data-tab="' + t[0] + '"><span class="tn">' + t[1] + '</span></button>';
+    return '<button class="tab" role="tab" aria-selected="' + (state.billTab === t[0]) + '" data-act="bill-tab" data-tab="' + t[0] + '" aria-label="' + t[1] + '">' +
+      '<span class="tn"><span class="long">' + t[1] + '</span><span class="short" aria-hidden="true">' + t[2] + '</span></span></button>';
   }).join('') + '</div>';
   var ol = orderedLists();
   if(ol.length > 1){

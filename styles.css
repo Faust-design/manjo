@@ -42,7 +42,7 @@ h2{font-family:var(--f-display);font-stretch:78%;font-weight:700;font-size:14px;
 .auth .msg.err{color:var(--danger)}
 .auth .alt{margin-top:4px;min-height:44px;border:0;background:none;font-weight:600;text-decoration:underline;text-underline-offset:3px}
 
-.app{height:100%;max-width:560px;margin:0 auto;display:grid;grid-template-rows:auto minmax(0,1fr) auto;
+.app{height:100%;max-width:560px;margin:0 auto;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden;
   padding-left:max(14px,env(safe-area-inset-left,0px));padding-right:max(14px,env(safe-area-inset-right,0px))}
 
 /* Kopf */
@@ -62,8 +62,8 @@ h2{font-family:var(--f-display);font-stretch:78%;font-weight:700;font-size:14px;
 .tab[aria-selected="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
 .tc{min-width:24px;height:22px;padding:0 6px;border-radius:11px;background:var(--line);color:var(--ink);display:grid;place-items:center;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
 .tab[aria-selected="true"] .tc{background:var(--accent);color:var(--on-accent)}
-.sum{display:flex;align-items:center;gap:10px;padding-bottom:2px;font-size:12.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
-.bar{flex:1;height:3px;border-radius:2px;background:var(--line);overflow:hidden}
+.sum{display:flex;align-items:center;gap:10px;min-width:0;padding-bottom:2px;font-size:12.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.bar{flex:1;min-width:20px;height:3px;border-radius:2px;background:var(--line);overflow:hidden}
 .bar i{display:block;height:100%;width:100%;background:var(--ink);transform:scaleX(0);transform-origin:left;transition:transform .3s var(--ease-out)}
 
 /* Hauptbereich */
@@ -128,14 +128,14 @@ button:disabled{cursor:default}
 .chip:active{transform:scale(.97)}
 
 /* Ansichten */
-.bhead{display:flex;align-items:center;gap:10px;margin:0 0 6px}
+.bhead{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;margin:0 0 6px}
 .bhead h2{font-size:20px;letter-spacing:.02em;text-transform:none;font-weight:800;font-family:var(--f-display);font-stretch:75%}
 .bhead .sheet-btn{margin:0 0 0 auto;width:auto;min-height:40px;padding:0 12px;font-size:14px}
 .set{margin:0 0 18px}
 .set h3{margin:0 0 6px;font-family:var(--f-display);font-stretch:78%;font-weight:700;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
 .tip{margin:0 0 8px;max-width:48ch;font-size:13px;color:var(--ink-2)}
 .field{width:100%;height:42px;padding:0 12px;border-radius:10px;border:1.5px solid var(--rail);background:var(--surface);font-size:16px}
-.settle{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:40px;padding:6px 0;border-top:1px solid var(--line)}
+.settle{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 10px;min-height:40px;padding:6px 0;border-top:1px solid var(--line)}
 .settle:first-of-type{border-top:0}
 .settle > span{flex:1;min-width:0;overflow-wrap:anywhere}
 .ghost.sm{min-height:36px;padding:0 10px;font-size:13px}
@@ -159,7 +159,7 @@ button.exm:active b{color:var(--ink-2)}
 .order-list{list-style:none;margin:0 0 8px;padding:0;display:grid;gap:6px;position:relative}
 .ord{position:relative;display:flex;align-items:center;gap:8px;min-height:50px;padding:3px 2px 3px 8px;background:var(--surface);border:1px solid var(--line);border-radius:10px}
 .ord-text{flex:1;min-width:0;display:grid}
-.station-in{width:100%;height:32px;padding:0 6px;margin-left:-6px;border:1.5px solid transparent;border-radius:8px;background:transparent;font-size:15px;font-weight:600;text-overflow:ellipsis}
+.station-in{width:100%;height:32px;padding:0 6px;margin-left:-6px;border:1.5px solid transparent;border-radius:8px;background:transparent;font-size:16px;font-weight:600;text-overflow:ellipsis}
 .station-in:focus{border-color:var(--rail);background:var(--bg)}
 .ord-ex{font-size:12px;color:var(--ink-2);line-height:1.2;margin-top:-2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .ord.empty .station-in{color:var(--ink-2);font-weight:500}
@@ -195,9 +195,9 @@ button.exm:active b{color:var(--ink-2)}
 .catrow .pct{font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .rc-line{display:grid;gap:6px;padding:8px 0;border-top:1px solid var(--line)}
 .rc-top{display:flex;gap:6px;align-items:center}
-.rc-n{flex:1;min-width:0;height:40px;font-size:15px}
-.rc-c{flex:none;width:96px;height:40px;text-align:right;font-variant-numeric:tabular-nums;font-size:15px}
-.rc-cat{height:38px;font-size:14px}
+.rc-n{flex:1;min-width:0;height:40px;font-size:16px}
+.rc-c{flex:none;width:88px;height:40px;text-align:right;font-variant-numeric:tabular-nums;font-size:16px}
+.rc-cat{height:40px;font-size:16px}
 .rc-sum{margin:6px 0 0;font-size:13px;color:var(--ink-2)}
 .rc-sum.warn{color:var(--warn)}
 .caution{margin:8px 0 0;padding:8px 10px;border-radius:10px;background:var(--surface);border:1px solid var(--line);font-size:12.5px;color:var(--ink-2)}
@@ -303,8 +303,44 @@ textarea.imp{width:100%;min-height:130px;max-height:260px;padding:10px 12px;bord
 .fchip{flex:none;min-height:32px;padding:0 12px;border-radius:999px;border:1.5px solid var(--line);background:none;color:var(--ink-2);font-size:13px;font-weight:600;white-space:nowrap}
 .fchip[aria-pressed="true"]{border-color:var(--ink-2);color:var(--ink);background:var(--surface)}
 /* Prüfmaske */
-.two{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
+.two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;margin-top:8px}
+.two > *{min-width:0}
 .rc-h{margin:14px 0 2px;font-family:var(--f-display);font-stretch:78%;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-2)}
 .catrow.none .catbar i{background:var(--rail)}
 
 .composer.bare{border-top-color:transparent;padding-top:0}
+
+/* Responsiv: nichts darf breiter werden als der Bildschirm */
+.sum > span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+input,select,textarea{min-width:0;max-width:100%}
+/* iOS zoomt bei Schrift unter 16 px in Eingabefelder hinein */
+input,select,textarea{font-size:16px}
+input[type="date"]{-webkit-appearance:none;appearance:none;display:block;min-height:42px;line-height:42px;padding-top:0;padding-bottom:0}
+input[type="date"]::-webkit-date-and-time-value{text-align:left}
+/* Leisten im scrollbaren Bereich nicht über den Rand ziehen */
+main .tabs,main .fchips{margin-left:0;margin-right:0;padding-left:0;padding-right:0}
+.settle > b{margin-left:auto}
+.mk-main,.exm{overflow:hidden}
+.exm span{overflow-wrap:anywhere}
+@media (max-width: 380px){
+  .shop-btn .lbl{display:none}
+  .shop-btn{padding:0 9px}
+  .tab .tn{max-width:110px}
+  .bhead h2{font-size:18px}
+}
+@media (max-width: 340px){
+  .two{grid-template-columns:minmax(0,1fr)}
+  .rc-c{width:76px}
+  .nb svg{width:20px;height:20px}
+}
+@media (min-width: 700px){
+  .app{max-width:600px}
+  .sheet{max-width:600px;border-radius:16px 16px 0 0}
+}
+/* Rechnungen-Tabs als gleich breite Segmente, passen immer in die Breite */
+main .tabs{overflow:visible}
+main .tabs .tab{flex:1 1 0;min-width:0;justify-content:center;padding:0 8px}
+main .tabs .tab .tn{max-width:none;overflow:hidden;text-overflow:ellipsis}
+@media (max-width: 380px){ main .tabs .tab{font-size:13px;padding:0 6px} }
+.tn .short{display:none}
+@media (max-width: 380px){ main .tabs .tn .long{display:none} main .tabs .tn .short{display:inline} }
