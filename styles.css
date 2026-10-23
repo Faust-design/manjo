@@ -346,3 +346,4 @@ main .tabs .tab .tn{max-width:none;overflow:hidden;text-overflow:ellipsis}
 @media (max-width: 380px){ main .tabs .tn .long{display:none} main .tabs .tn .short{display:inline} }
 .rc-note{margin:8px 0 0;padding:8px 10px;border-radius:10px;background:var(--bg);border:1px solid var(--line);font-size:13px;color:var(--ink-2)}
 .rc-err{margin:10px 0 0;padding:8px 10px;border-radius:10px;border:1.5px solid var(--danger);color:var(--danger);font-size:13.5px;font-weight:600}
+.log{margin:0;max-height:220px;overflow:auto;padding:8px 10px;border-radius:10px;background:var(--surface);border:1px solid var(--line);font:12px/1.45 ui-monospace,Menlo,monospace;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--ink-2)}

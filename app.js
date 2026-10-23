@@ -15,6 +15,22 @@ var EYE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="c
 var EYE_OFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1"/></svg>';
 var NAV_INDEX = {list:0, markets:1, bills:2, settings:3, account:4};
 var DB_UPDATE_CODES = ['42P01', '42703', 'PGRST204', 'PGRST205'];
+var APP_VERSION = '2026-10-23.3';
+var LS_LOG = 'manjo-log';
+/* Kleines Protokoll auf dem Gerät: hilft, Fehler zu finden, die man auf dem Handy nicht sieht */
+function logEvent(kind, msg){
+  try{
+    var l = JSON.parse(localStorage.getItem(LS_LOG) || '[]');
+    l.push({t: new Date().toISOString().slice(5, 19).replace('T', ' '), k: kind, m: String(msg).slice(0, 300)});
+    localStorage.setItem(LS_LOG, JSON.stringify(l.slice(-40)));
+  }catch(e){}
+}
+function errInfo(err){
+  if(!err) return 'kein Fehlerobjekt';
+  return [err.code, err.message, err.details, err.hint].filter(Boolean).join(' | ') || String(err);
+}
+window.addEventListener('error', function(e){ logEvent('Skriptfehler', (e.message || '') + ' @' + (e.lineno || '?')); });
+window.addEventListener('unhandledrejection', function(e){ logEvent('Fehler', errInfo(e.reason)); });
 
 var $ = function(s){ return document.querySelector(s); };
 var main = $('#main'), hint = $('#hint'), input = $('#newItem'), form = $('#addForm'),
@@ -220,7 +236,16 @@ function isNetErr(err){
   return (typeof navigator !== 'undefined' && navigator.onLine === false) || /fetch|network|load failed|timed? ?out|abort/i.test(m);
 }
 function needsDbUpdate(err){ return !!err && DB_UPDATE_CODES.indexOf(err.code) >= 0; }
+/* Antwortet die Datenbank nicht, soll nichts endlos hängen */
+function withTimeout(p, ms){
+  return new Promise(function(res, rej){
+    var done = false, tm = setTimeout(function(){ if(!done){ done = true; res({data: null, error: {code: 'TIMEOUT', message: 'Keine Antwort'}}); } }, ms || 15000);
+    Promise.resolve(p).then(function(v){ if(!done){ done = true; clearTimeout(tm); res(v); } }, function(e){ if(!done){ done = true; clearTimeout(tm); rej(e); } });
+  });
+}
 function errText(err){
+  if(err && err.code === 'TIMEOUT') return 'Die Datenbank hat nicht geantwortet. Prüf die Verbindung und versuch es noch einmal, die Eingaben bleiben stehen.';
+  if(err && err.code === '22008') return 'Das Datum ist ungültig. Bitte das Datum korrigieren.';
   if(needsDbUpdate(err)){
     var m = String(err.message || '') + ' ' + String(err.details || '') + ' ' + String(err.hint || '');
     if(/spent_on|lines/.test(m)) return 'Der Datenbank fehlt noch ein Update. Bitte schema_v3.sql und danach schema_v4.sql in Supabase ausführen.';
@@ -408,14 +433,17 @@ var store = {
     return sb.from('list_members').delete().eq('list_id', id).eq('email', email).then(function(r){ if(r.error) onWriteError(r.error); });
   },
   addExpense: function(row){
+    logEvent('Speichern', 'Ausgabe ' + row.amount_cents + ' ct, Markt ' + row.list_id + ', geteilt ' + row.participants.length);
     var tmp = normExp(Object.assign({id: 'tmp-' + uuid(), created_at: new Date().toISOString()}, row));
     state.expenses.push(tmp);
     render();
-    return sb.from('expenses').insert(row).then(function(r){
-      if(r.error){ state.expenses = state.expenses.filter(function(e){ return e !== tmp; }); render(); return {ok: false, error: r.error}; }
+    return withTimeout(sb.from('expenses').insert(row)).then(function(r){
+      if(r.error){ logEvent('Abgelehnt', errInfo(r.error)); state.expenses = state.expenses.filter(function(e){ return e !== tmp; }); render(); return {ok: false, error: r.error}; }
+      logEvent('Gespeichert', 'Ausgabe ' + row.amount_cents + ' ct');
       scheduleReload(0);
       return {ok: true};
     }, function(err){
+      logEvent('Fehler', errInfo(err));
       state.expenses = state.expenses.filter(function(e){ return e !== tmp; }); render();
       return {ok: false, error: err};
     });
@@ -424,7 +452,8 @@ var store = {
     var i = state.expenses.findIndex(function(e){ return e.id === id; });
     if(i >= 0) state.expenses[i] = normExp(Object.assign({id: id, created_at: new Date(state.expenses[i].ts).toISOString()}, row));
     render();
-    return sb.from('expenses').update(row).eq('id', id).then(function(r){
+    return withTimeout(sb.from('expenses').update(row).eq('id', id)).then(function(r){
+      if(r.error) logEvent('Abgelehnt', errInfo(r.error));
       scheduleReload(0);
       return r.error ? {ok: false, error: r.error} : {ok: true};
     }, function(err){ scheduleReload(0); return {ok: false, error: err}; });
@@ -842,7 +871,15 @@ function renderAccount(){
     '<input class="field" id="myName" maxlength="40" value="' + esc(my) + '" placeholder="Vorname"><button class="ibtn" type="submit" aria-label="Name speichern">' + TICK + '</button></form></section>' +
     peopleHTML() +
     '<section class="set"><h3>Konto</h3><div class="acct"><b>' + esc(state.me.email || 'Angemeldet') + '</b><span>Eure Daten liegen in eurem Supabase-Projekt.' + (n ? ' ' + n + ' Änderungen warten auf Verbindung.' : '') + '</span></div>' +
-    '<button class="ghost' + (state.confirmOut ? ' warn' : '') + '" data-act="signout">' + (state.confirmOut ? 'Trotzdem abmelden? Ungespeichertes geht verloren' : 'Abmelden') + '</button></section>';
+    '<button class="ghost' + (state.confirmOut ? ' warn' : '') + '" data-act="signout">' + (state.confirmOut ? 'Trotzdem abmelden? Ungespeichertes geht verloren' : 'Abmelden') + '</button></section>' +
+    logHTML();
+}
+function logHTML(){
+  var l = lsJSON(LS_LOG, []);
+  var h = '<section class="set"><h3>Fehlerprotokoll</h3><p class="tip">Version ' + APP_VERSION + '. Wenn etwas nicht klappt, kopiere diesen Text und schick ihn weiter.</p>';
+  h += l.length ? '<pre class="log" id="logText">' + esc(l.slice().reverse().map(function(x){ return x.t + '  ' + x.k + ': ' + x.m; }).join('\n')) + '</pre>' : '<p class="tip">Noch keine Einträge.</p>';
+  h += '<div class="bhead" style="margin-top:6px"><button class="ghost" data-act="log-copy">Kopieren</button>' + (l.length ? '<button class="ghost" data-act="log-clear">Leeren</button>' : '') + '</div></section>';
+  return h;
 }
 function renderSettings(){
   var l = cur(), h = '';
@@ -1097,10 +1134,29 @@ async function handleFile(file){
     flashText('Das Foto ließ sich nicht lesen. Trage die Ausgabe von Hand ein.');
   }
 }
+function validDate(s){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))) return false;
+  var d = new Date(s + 'T12:00:00');
+  return !isNaN(d) && d.toISOString().slice(0, 10) === s;
+}
+function rcpFail(text){
+  var btn = overlay.querySelector('#rcForm button[type="submit"]'), e2 = $('#rcErr');
+  if(btn){ btn.disabled = false; btn.textContent = 'Speichern'; }
+  if(e2){ e2.textContent = text; e2.hidden = false; if(e2.scrollIntoView) e2.scrollIntoView({block: 'nearest'}); }
+  else flashText(text);
+}
 function saveRcp(){
+  try{ saveRcpInner(); }
+  catch(e){ logEvent('Skriptfehler', 'Speichern: ' + (e && e.message)); rcpFail('Speichern ist abgebrochen: ' + (e && e.message) + '. Bitte schick Julian den Text aus Account → Fehlerprotokoll.'); }
+}
+function saveRcpInner(){
   var r = state.rcp;
-  if(!r || !listById(r.list)) return;
+  if(!r){ logEvent('Hinweis', 'Speichern ohne offenes Formular'); return; }
+  if(!listById(r.list)){ rcpFail('Der gewählte Markt ist nicht mehr da. Bitte einen anderen Markt wählen.'); return; }
   readRcp();
+  if(!validDate(r.date)){ logEvent('Hinweis', 'Ungültiges Datum ' + r.date + ', heute verwendet'); r.date = todayISO(); }
+  if(!r.total){ rcpFail('Bitte den Gesamtbetrag eingeben.'); return; }
+  if(!r.parts.length){ rcpFail('Mindestens eine Person bei „Geteilt mit“ anhaken.'); return; }
   if(!r.total){ flashText('Bitte den Gesamtbetrag eingeben.'); return; }
   if(!r.parts.length){ flashText('Mindestens eine Person anhaken.'); return; }
   var lines = r.lines.filter(function(x){ return x.n && x.c; }).map(function(x){ return {n: x.n, c: x.c, cat: x.cat}; });
@@ -1113,14 +1169,12 @@ function saveRcp(){
   if(errEl) errEl.hidden = true;
   var job = r.mode === 'edit' ? store.updateExpense(r.id, row) : store.addExpense(row);
   job.then(function(res){
-    if(state.rcp !== r) return;
     if(!res || !res.ok){
-      if(btn){ btn.disabled = false; btn.textContent = 'Speichern'; }
-      var e2 = $('#rcErr');
-      if(e2){ e2.textContent = errText(res && res.error); e2.hidden = false; e2.scrollIntoView && e2.scrollIntoView({block: 'nearest'}); }
-      else flashText(errText(res && res.error));
+      if(state.rcp !== r){ flashText(errText(res && res.error)); return; }
+      rcpFail(errText(res && res.error));
       return;
     }
+    if(state.rcp !== r){ flashText(msg); return; }
     if(r.mode === 'photo'){
       var ids = r.match.filter(function(id){ return r.matchOn[id]; });
       ids.forEach(function(id){ var it = findItem(id); if(it && !it.done) store.updateItem(id, {done: true}); });
@@ -1515,6 +1569,13 @@ document.addEventListener('click', function(e){
     readRcp();
     state.rcp.lines.splice(+b.dataset.i, 1);
     rebuildSheet();
+  } else if(act === 'log-copy'){
+    var txt = 'manjo ' + APP_VERSION + ' · ' + navigator.userAgent + '\n' + lsJSON(LS_LOG, []).map(function(x){ return x.t + '  ' + x.k + ': ' + x.m; }).join('\n');
+    var okc = function(){ flashText('Protokoll kopiert.'); }, failc = function(){ flashText('Kopieren ging nicht. Markiere den Text und kopiere ihn von Hand.'); };
+    try{ navigator.clipboard.writeText(txt).then(okc, failc); }catch(err){ failc(); }
+  } else if(act === 'log-clear'){
+    lsDel(LS_LOG);
+    render();
   } else if(act === 'signout'){
     if(state.queue.length && !state.confirmOut){ state.confirmOut = true; render(); return; }
     sb.auth.signOut();
@@ -1742,8 +1803,27 @@ window.addEventListener('online', function(){ if(state.authed){ subscribe(); sch
 window.addEventListener('offline', function(){ if(state.authed){ state.mode = 'lost'; renderHeader(); } });
 setInterval(function(){ if(state.authed && state.queue.length) flush(); }, 20000);
 
+/* Neue Version: der Service Worker übernimmt, dann lädt die App neu, sobald nichts Ungespeichertes offen ist */
+var updateReady = false;
+function reloadIfIdle(){
+  if(!updateReady) return;
+  if(!overlay.hidden || input.value.trim() || drag){ return; }
+  updateReady = false;
+  logEvent('Update', 'neue Version geladen');
+  location.reload();
+}
+function setupUpdates(){
+  if(!('serviceWorker' in navigator)) return;
+  try{
+    var hadCtrl = !!navigator.serviceWorker.controller;
+    navigator.serviceWorker.addEventListener('controllerchange', function(){ if(hadCtrl){ updateReady = true; reloadIfIdle(); } });
+    navigator.serviceWorker.register('sw.js').then(function(reg){
+      document.addEventListener('visibilitychange', function(){ if(document.visibilityState === 'visible'){ try{ reg.update(); }catch(e){} reloadIfIdle(); } });
+    }).catch(function(){});
+  }catch(e){}
+}
 (async function boot(){
-  if('serviceWorker' in navigator){ try{ navigator.serviceWorker.register('sw.js'); }catch(e){} }
+  setupUpdates();
   if(!CFG.url || !CFG.key || !window.supabase){
     showAuth(true);
     $('#authForm').hidden = true;
@@ -1754,8 +1834,10 @@ setInterval(function(){ if(state.authed && state.queue.length) flush(); }, 20000
   var linkErr = readLinkError();
   sb = window.supabase.createClient(CFG.url, CFG.key, {auth: {persistSession: true, autoRefreshToken: true, detectSessionInUrl: true}});
   sb.auth.onAuthStateChange(function(ev, session){
-    if(ev === 'SIGNED_OUT') onSignedOut();
-    else if(session && !state.authed) onSignedIn(session);
+    setTimeout(function(){
+      if(ev === 'SIGNED_OUT') onSignedOut();
+      else if(session && !state.authed) onSignedIn(session);
+    }, 0);
   });
   var s = await sb.auth.getSession();
   if(s.data && s.data.session) onSignedIn(s.data.session);
