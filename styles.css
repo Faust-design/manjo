@@ -361,3 +361,7 @@ main .tabs .tab .tn{max-width:none;overflow:hidden;text-overflow:ellipsis}
 .price .pm em{font-style:normal;font-size:11.5px;font-weight:700;padding:1px 6px;margin-left:4px;border-radius:5px;background:var(--accent);color:var(--on-accent)}
 .price .pd{font-size:12.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .price b{font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Allgemeine Liste */
+.gsec{padding-bottom:12px}
+.gsec .stop-h{min-height:28px}
+.gsec + .gsec{border-top:1px solid var(--line);padding-top:8px}

@@ -55,3 +55,12 @@ Einmalig im Supabase-Projekt den Inhalt von `schema_v5.sql` im SQL Editor ausfü
 
 - **Glossar** unter Märkte: Ein Begriff wie „Hafermilch“ steht für ein genaues Produkt („NoMilk Hafer 3,5 %“) und einen Markt. Tippt jemand den Begriff in eine Liste, landet er auf der Liste dieses Markts. Mit „Hier lassen“ bleibt er, wo er eingetippt wurde.
 - **Preise:** Ein Tipp auf einen Artikel zeigt den letzten Preis je Markt aus euren Kassenzetteln. Ist ein Artikel woanders günstiger, schlägt die App „Verschieben“ vor.
+
+## Update: Allgemeine Liste
+
+Einmalig im Supabase-Projekt den Inhalt von `schema_v6.sql` im SQL Editor ausführen. Danach:
+
+- Unter Märkte → Neuer Markt → **Allgemein** (oder über den Hinweis in einer Liste) legst du die allgemeine Liste an. Sie steht als Tab immer ganz vorn.
+- Was dort steht, erscheint in **allen Marktlisten**, einsortiert nach deren Route. Ist ein Artikel einem Markt zugeordnet, erscheint er **nur dort**.
+- Zugeordnet wird automatisch über das Glossar oder, wenn die Kassenzettel denselben Artikel in mindestens zwei Märkten zeigen und einer mindestens 10 % günstiger ist. Im Artikel lässt sich die Zuordnung jederzeit umstellen („Erscheint in“).
+- Abhaken in einem Markt hakt den Artikel auch in der allgemeinen Liste ab. Die allgemeine Liste selbst bleibt vollständig.

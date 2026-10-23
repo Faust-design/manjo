@@ -19,7 +19,7 @@ let n = 0;
 const ME = {id: 'u1', email: 'me@x.de'};
 function q(table){
   const o = {t: table, op: 'select', f: [], row: null, single: false,
-    select(){ return o; }, order(){ return o; }, range(){ return o; },
+    select(){ return o; }, order(){ return o; }, range(){ return o; }, limit(){ return o; },
     insert(r){ o.op = 'insert'; o.row = r; return o; },
     update(r){ o.op = 'update'; o.row = r; return o; },
     upsert(r){ o.op = 'upsert'; o.row = r; return o; },
@@ -257,12 +257,56 @@ const ok = (c, m) => { count++; if(!c){ fails++; console.log('FAIL ' + m); } els
   click(QA('.item').find(li => /Hafermilch/.test(li.textContent)).querySelector('.name-btn')); await sleep(30);
   const pr = QA('.price').map(x => x.textContent.replace(/\s+/g, ' '));
   ok(pr.length === 2 && /0,95 €/.test(pr[0]) && /günstigster/.test(pr[0]) && /1,29 €/.test(pr[1]), 'Preise je Markt im Artikel, günstigster oben');
-  ok(/Im Glossar/.test(Q('.gl-box').textContent), 'Artikel zeigt Glossar-Eintrag');
+  ok(/Im Glossar/.test(Q('#sheetBody .gl-box').textContent), 'Artikel zeigt Glossar-Eintrag');
   click(Q('[data-act="close"]')); await sleep(250);
   type(Q('#newItem'), 'Spülmittel'); submit(Q('#addForm')); await sleep(120);
   ok(!Q('#toast').hidden && /zuletzt günstiger/.test(Q('#toastText').textContent) && /Verschieben/.test(Q('#toastBtn').textContent), 'Vorschlag: woanders günstiger');
   click(Q('#toastBtn')); await sleep(120);
   ok(db.items.find(i => i.name === 'Spülmittel').list_id === L1, '„Verschieben“ legt den Artikel auf die günstigere Liste');
+
+  // Allgemeine Liste
+  nav('markets'); await sleep(20);
+  click(Q('[data-act="new-list-open"]')); await sleep(20);
+  click(Q('[data-act="tpl"][data-tpl="allgemein"]')); submit(Q('#newListForm')); await sleep(120);
+  const G = db.lists.find(l => l.tpl === 'allgemein');
+  ok(!!G && /Allgemein/.test(Q('.tab').textContent), 'Allgemeine Liste angelegt, Tab ganz vorn');
+  ok(Q('.tab[aria-selected="true"]') && /Allgemein/.test(Q('.tab[aria-selected="true"]').textContent), 'allgemeine Liste ist geöffnet');
+  type(Q('#newItem'), 'Kaffee'); ok(/für alle Märkte/.test(Q('#hint').textContent), 'Hinweis: für alle Märkte');
+  submit(Q('#addForm')); await sleep(120);
+  ok(db.items.some(i => i.name === 'Kaffee' && i.list_id === G.id && !i.target_list), 'Kaffee in der allgemeinen Liste, ohne Zuordnung');
+  ok(/Für alle Märkte/.test(mainText()), 'Gruppe „Für alle Märkte“');
+  const tabBy = re => QA('.tab').find(b => re.test(b.textContent));
+  click(tabBy(/Supermarkt/)); await sleep(30);
+  let kRow = QA('.item').find(li => /Kaffee/.test(li.textContent));
+  ok(kRow && /aus Allgemein/.test(kRow.textContent) && /Frühstück/.test(kRow.closest('.stop').textContent), 'Kaffee erscheint im Supermarkt, einsortiert nach Route');
+  click(tabBy(/Baumarkt/)); await sleep(30);
+  ok(QA('.item').some(li => /Kaffee/.test(li.textContent)), 'Kaffee erscheint auch im Baumarkt');
+  click(tabBy(/Allgemein/)); await sleep(30);
+  type(Q('#newItem'), 'Hafermilch'); ok(/nur Baumarkt/.test(Q('#hint').textContent), 'Hinweis: Glossar ordnet zu');
+  submit(Q('#addForm')); await sleep(120);
+  const ghm = db.items.find(i => i.name === 'Hafermilch' && i.list_id === G.id);
+  ok(ghm && ghm.target_list === L1, 'Hafermilch laut Glossar nur Baumarkt zugeordnet');
+  ok(/Nur Baumarkt/.test(mainText()), 'Gruppe „Nur Baumarkt“');
+  ok(!Q('#toast').hidden && /Für alle Märkte/.test(Q('#toastBtn').textContent), 'Meldung mit „Für alle Märkte“');
+  db.expenses.push({id: 'px3', list_id: L0, amount_cents: 250, description: 'Bon', payer_email: ME.email, participants: [ME.email], kind: 'expense', spent_on: '2026-10-03', created_at: new Date().toISOString(), lines: [{n: 'BUTTER', c: 250, cat: 'milch'}]});
+  db.expenses.push({id: 'px4', list_id: L1, amount_cents: 199, description: 'Bon', payer_email: ME.email, participants: [ME.email], kind: 'expense', spent_on: '2026-10-04', created_at: new Date().toISOString(), lines: [{n: 'BUTTER', c: 199, cat: 'sonst'}]});
+  w.dispatchEvent(new w.Event('online')); await sleep(400);
+  type(Q('#newItem'), 'Butter'); submit(Q('#addForm')); await sleep(120);
+  ok(db.items.find(i => i.name === 'Butter' && i.list_id === G.id).target_list === L1, 'Butter nach Kassenzetteln dem günstigeren Markt zugeordnet');
+  click(QA('.item').find(li => /Kaffee/.test(li.textContent)).querySelector('.name-btn')); await sleep(30);
+  ok(/Erscheint in/.test(Q('#sheetBody').textContent), 'Artikel-Fenster zeigt Zuordnung');
+  click(QA('[data-act="assign"]').find(b => /Supermarkt/.test(b.textContent))); await sleep(120);
+  ok(db.items.find(i => i.name === 'Kaffee').target_list === L0, 'Kaffee von Hand dem Supermarkt zugeordnet');
+  click(Q('[data-act="close"]')); await sleep(250);
+  click(tabBy(/Baumarkt/)); await sleep(30);
+  ok(!QA('.item').some(li => /Kaffee/.test(li.textContent)) && QA('.item').some(li => /Butter/.test(li.textContent)), 'Baumarkt: Kaffee weg, Butter da');
+  click(tabBy(/Supermarkt/)); await sleep(30);
+  kRow = QA('.item').find(li => /Kaffee/.test(li.textContent));
+  click(kRow.querySelector('.box-btn')); await sleep(450);
+  ok(db.items.find(i => i.name === 'Kaffee').done === true, 'im Supermarkt abgehakt = in der allgemeinen Liste abgehakt');
+  click(tabBy(/Allgemein/)); await sleep(30);
+  ok(/Im Wagen/.test(mainText()) && QA('.cart .item').some(li => /Kaffee/.test(li.textContent)), 'allgemeine Liste zeigt Kaffee im Wagen');
+  ok(QA('.item').length >= 3, 'allgemeine Liste bleibt vollständig');
 
   // Einkaufsmodus
   nav('list'); await sleep(20);

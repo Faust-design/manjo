@@ -1,5 +1,5 @@
 // Netzwerk zuerst, Zwischenspeicher als Rückfall: Updates erscheinen sofort, die App öffnet auch ohne Netz.
-const CACHE = 'manjo-v12';
+const CACHE = 'manjo-v13';
 const SHELL = ['./', 'index.html', 'styles.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png',
   'lib/classify.js', 'lib/drag.js', 'lib/receipt.js', 'lib/ledger.js', 'lib/items.js'];
 self.addEventListener('install', e => {

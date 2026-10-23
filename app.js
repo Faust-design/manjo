@@ -16,7 +16,8 @@ var EYE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="c
 var EYE_OFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1"/></svg>';
 var NAV_INDEX = {list:0, markets:1, bills:2, settings:3, account:4};
 var DB_UPDATE_CODES = ['42P01', '42703', 'PGRST204', 'PGRST205'];
-var APP_VERSION = '2026-10-23.5';
+var APP_VERSION = '2026-10-23.6';
+var GEN = 'allgemein';
 var LS_LOG = 'manjo-log';
 /* Kleines Protokoll auf dem Gerät: hilft, Fehler zu finden, die man auf dem Handy nicht sieht */
 function logEvent(kind, msg){
@@ -47,13 +48,13 @@ var state = {
   me: {id: null, email: ''},
   confirmDel: false, confirmExp: null, confirmSettle: null, confirmOut: false, accessExtra: [],
   billTab: 'foto', billMarket: 'all', month: monthKey(), rcp: null, ocrTok: null,
-  gone: {}, shop: false, queue: []
+  gone: {}, shop: false, queue: [], dbV6: false
 };
 var sb = null, chan = null, reloadT = null, signup = false, flushing = false, cacheT = null;
 var focusFn = null, openerSel = null, closing = false, pendingRender = false, sheetHtml = '';
 var drag = null, seen = null, pendingDone = {}, enterAt = {};
 var flashT = null, delT = null, undoT = null, undoIds = null, wakeLock = null, toastT = null, toastFn = null;
-var swipe = null, swipeBlock = false;
+var swipe = null, swipeBlock = false, renderL = null;
 
 /* ---------- Helfer ---------- */
 function esc(s){ return String(s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
@@ -109,13 +110,16 @@ function peopleOf(lists){
   lists.forEach(function(l){ people(l).forEach(function(p){ if(a.indexOf(p) < 0) a.push(p); }); });
   return a;
 }
-function sortLists(a, b){ return (a.ts||0) - (b.ts||0) || String(a.name).localeCompare(String(b.name)); }
+function isGen(l){ return !!l && l.tpl === GEN; }
+function sortLists(a, b){ return (isGen(b) - isGen(a)) || (a.ts||0) - (b.ts||0) || String(a.name).localeCompare(String(b.name)); }
+function genLists(){ return state.lists.filter(isGen); }
+function marketLists(){ return orderedLists().filter(function(l){ return !isGen(l); }); }
 function orderedLists(){
   var o = lsJSON(LS_ORDER, []);
   return state.lists.slice().sort(function(a, b){
     var ia = o.indexOf(a.id), ib = o.indexOf(b.id);
     if(ia < 0) ia = 1e6; if(ib < 0) ib = 1e6;
-    return ia - ib || sortLists(a, b);
+    return (isGen(b) - isGen(a)) || ia - ib || sortLists(a, b);
   });
 }
 function hiddenIds(){ return lsJSON(LS_HIDDEN, []); }
@@ -137,15 +141,33 @@ function stationName(l, id){ var s = l.stations.filter(function(x){ return x.id 
 function stationNo(l, id){ var i = stationIds(l).indexOf(id); return i < 0 ? l.stations.length : i + 1; }
 function findItem(id){ for(var i = 0; i < state.items.length; i++){ if(state.items[i].id === id) return state.items[i]; } return null; }
 function listItems(l){ return state.items.filter(function(i){ return i.list === l.id && !state.gone[i.id]; }); }
-function openCount(l){ return listItems(l).filter(function(i){ return !i.done; }).length; }
+/* Was in einer Liste zu sehen ist: eigene Artikel, bei Märkten dazu die allgemeinen Artikel
+   ohne Zuordnung oder mit Zuordnung zu genau diesem Markt (eigene Artikel gleichen Namens haben Vorrang) */
+function viewItems(l){
+  var own = listItems(l);
+  if(isGen(l)) return own;
+  var gens = genLists().map(function(g){ return g.id; });
+  if(!gens.length) return own;
+  var keys = {};
+  own.forEach(function(i){ keys[baseKey(i.name)] = 1; });
+  var extra = state.items.filter(function(i){
+    return gens.indexOf(i.list) >= 0 && !state.gone[i.id] && (!i.target || i.target === l.id || !listById(i.target)) && !keys[baseKey(i.name)];
+  });
+  return own.concat(extra);
+}
+/* Station eines Artikels in einem Markt: eigene Artikel haben ihre Station, allgemeine werden einsortiert */
+function catIn(l, i){ return i.list === l.id ? effCat(l, i.cat) : clsf(l, i.name); }
+function openCount(l){ return viewItems(l).filter(function(i){ return !i.done; }).length; }
 function baseKey(name){ return norm(splitQty(name).base); }
 function newListObj(name, tpl){
+  if(tpl === GEN) return {name: name, tpl: GEN, stations: [{id: 'sonst', name: 'Sonstiges'}], learned: {}};
   var t = TPLS[tpl] || TPLS.eigen;
   return {name: name, tpl: TPLS[tpl] ? tpl : 'eigen', stations: t.stations.map(function(s){ return {id:s.id, name:s.name}; }), learned: {}};
 }
 function normItem(id, d){
   if(!d || !d.name) return null;
-  return {id: String(id), name: String(d.name), cat: String(d.cat || 'sonst'), done: !!d.done, ts: Date.parse(d.created_at) || Date.now(), list: String(d.list_id || '')};
+  return {id: String(id), name: String(d.name), cat: String(d.cat || 'sonst'), done: !!d.done, ts: Date.parse(d.created_at) || Date.now(), list: String(d.list_id || ''),
+          target: d.target_list ? String(d.target_list) : null};
 }
 function normExp(d){
   return {id: String(d.id), list: String(d.list_id), cents: +d.amount_cents || 0, desc: String(d.description || ''),
@@ -154,7 +176,7 @@ function normExp(d){
           lines: Array.isArray(d.lines) ? d.lines.map(function(x){ return {n: String(x.n || ''), c: +x.c || 0, cat: String(x.cat || 'sonst')}; }) : []};
 }
 function normList(d, members){
-  var tpl = TPLS[d.tpl] ? d.tpl : 'eigen', stations = [], seenIds = {};
+  var tpl = TPLS[d.tpl] ? d.tpl : (d.tpl === GEN ? GEN : 'eigen'), stations = [], seenIds = {};
   if(Array.isArray(d.stations)){
     d.stations.forEach(function(s){
       if(s && s.id && s.name && !seenIds[s.id]){ seenIds[s.id] = 1; stations.push({id:String(s.id), name:String(s.name)}); }
@@ -171,10 +193,10 @@ function normList(d, members){
 /* Gelerntes gilt für alle Märkte mit derselben Vorlage, das eigene hat Vorrang */
 function learnedFor(l){
   var m = {};
-  if(l.tpl !== 'eigen') state.lists.forEach(function(x){ if(x.id !== l.id && x.tpl === l.tpl) Object.assign(m, x.learned); });
+  if(l.tpl !== 'eigen' && l.tpl !== GEN) state.lists.forEach(function(x){ if(x.id !== l.id && x.tpl === l.tpl) Object.assign(m, x.learned); });
   return Object.assign(m, l.learned);
 }
-function clsf(l, name){ return classify(splitQty(name).base || name, learnedFor(l), l.tpl, l.stations); }
+function clsf(l, name){ if(isGen(l)) return 'sonst'; return classify(splitQty(name).base || name, learnedFor(l), l.tpl, l.stations); }
 
 /* ---------- Rechnungen ---------- */
 var TESS_LIB = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
@@ -287,7 +309,7 @@ async function flush(){
 }
 /* Änderung auf einen Artikel anwenden; list_id heißt lokal list */
 function applyPatch(it, patch){
-  Object.keys(patch).forEach(function(k){ if(k === 'list_id') it.list = patch[k]; else it[k] = patch[k]; });
+  Object.keys(patch).forEach(function(k){ if(k === 'list_id') it.list = patch[k]; else if(k === 'target_list') it.target = patch[k]; else it[k] = patch[k]; });
 }
 /* Noch nicht gesendete Änderungen auf frisch geladene Daten anwenden */
 function replayQueue(){
@@ -305,13 +327,13 @@ function saveCache(){
   if(!state.authed || !state.loaded) return;
   clearTimeout(cacheT);
   cacheT = setTimeout(function(){
-    lsSet(cKey(), JSON.stringify({v: 1, lists: state.lists, items: state.items, expenses: state.expenses, profiles: state.profiles, products: state.products}));
+    lsSet(cKey(), JSON.stringify({v: 1, lists: state.lists, items: state.items, expenses: state.expenses, profiles: state.profiles, products: state.products, dbV6: state.dbV6}));
   }, 400);
 }
 function loadCache(){
   var c = lsJSON(cKey(), null);
   if(!c || c.v !== 1) return;
-  state.lists = c.lists || []; state.items = c.items || []; state.expenses = c.expenses || []; state.profiles = c.profiles || {}; state.products = c.products || [];
+  state.lists = c.lists || []; state.items = c.items || []; state.expenses = c.expenses || []; state.profiles = c.profiles || {}; state.products = c.products || []; state.dbV6 = !!c.dbV6;
   state.loaded = true;
   replayQueue();
   ensureCurrent();
@@ -332,7 +354,8 @@ async function loadAll(){
       sb.from('items').select('*').order('created_at').range(0, 4999),
       sb.from('expenses').select('*').order('created_at').range(0, 4999),
       optional(sb.from('profiles').select('email,display_name')),
-      optional(sb.from('products').select('*').order('created_at'))
+      optional(sb.from('products').select('*').order('created_at')),
+      optional(sb.from('items').select('target_list').limit(1))
     ]);
     for(var k = 0; k < 4; k++){ if(r[k].error) throw r[k].error; }
     var mem = {};
@@ -346,6 +369,7 @@ async function loadAll(){
       state.profiles = pf;
     }
     if(!r[5].error && r[5].data) state.products = r[5].data.map(normProduct);
+    state.dbV6 = !r[6].error;
     replayQueue();
     state.loaded = true;
     state.mode = 'live';
@@ -389,7 +413,8 @@ var store = {
   addItem: function(item){
     var id = uuid(), at = new Date().toISOString();
     var row = {id: id, list_id: item.list, name: item.name, cat: item.cat, done: false};
-    upsertItem({id: id, name: item.name, cat: item.cat, done: false, ts: Date.now(), list: item.list});
+    if(item.target) row.target_list = item.target;
+    upsertItem({id: id, name: item.name, cat: item.cat, done: false, ts: Date.now(), list: item.list, target: item.target || null});
     render();
     enqueue({op: 'ins', row: row, at: at});
     return id;
@@ -513,6 +538,15 @@ function pricesHTML(obs){
       '<span class="pd">' + fmtISO(o.date) + '</span><b>' + money(o.c) + '</b></div>';
   }).join('') + '</div><p class="tip">Letzter Preis je Markt laut euren Kassenzetteln. Packungsgrößen können abweichen.</p>';
 }
+/* Allgemeine Artikel: Glossar oder klar günstigerer Markt (mind. 10 %, Preise aus mind. zwei Märkten) */
+function autoTarget(name){
+  if(!state.dbV6) return null;
+  var g = glossFor(name), gl = g && listById(g.list);
+  if(gl && !isGen(gl)) return {list: gl.id, why: 'laut Glossar'};
+  var obs = pricesOf(name, null).filter(function(o){ var x = listById(o.list); return x && !isGen(x); });
+  if(obs.length >= 2 && obs[0].c <= obs[1].c * 0.9) return {list: obs[0].list, why: 'dort günstiger'};
+  return null;
+}
 /* Meldung mit einer Aktion (z. B. "Hier lassen" oder "Verschieben") */
 function showToast(text, label, fn, ms){
   commitUndo();
@@ -528,7 +562,7 @@ function moveItem(id, listId){
   var it = findItem(id), l2 = listById(listId);
   if(!it || !l2 || it.list === listId) return;
   var key = baseKey(it.name);
-  if(listItems(l2).some(function(i){ return i.id !== id && baseKey(i.name) === key; })){ flashText(splitQty(it.name).base + ' steht auf der Liste ' + l2.name + ' schon.'); return; }
+  if(viewItems(l2).some(function(i){ return i.id !== id && baseKey(i.name) === key; })){ flashText(splitQty(it.name).base + ' steht auf der Liste ' + l2.name + ' schon.'); return; }
   store.updateItem(id, {list_id: listId, cat: clsf(l2, it.name)});
   flashText(splitQty(it.name).base + ' liegt jetzt auf der Liste ' + l2.name + '.');
 }
@@ -555,9 +589,22 @@ function addItem(l, raw, batch){
   var name = cap(raw.trim().replace(/\s+/g, ' '));
   if(!name) return null;
   var sq = splitQty(name), key = norm(sq.base);
-  var g = glossFor(name), target = (g && g.list !== l.id && listById(g.list)) || l;
   if(batch){ if(batch[key]) return {status:'dup', name:name}; batch[key] = 1; }
-  var dup = listItems(target).find(function(i){ return baseKey(i.name) === key; });
+  if(isGen(l)){
+    var dg = listItems(l).find(function(i){ return baseKey(i.name) === key; });
+    if(dg){
+      var pg = {};
+      if(dg.done) pg.done = false;
+      if(sq.qty && name !== dg.name) pg.name = name;
+      if(Object.keys(pg).length){ store.updateItem(dg.id, pg); return {status: dg.done ? 'back' : 'qty', name: pg.name || dg.name}; }
+      return {status: 'dup', name: dg.name};
+    }
+    var at = autoTarget(name);
+    var gid = store.addItem({name: name, cat: 'sonst', list: l.id, target: at ? at.list : null});
+    return {status: 'gen', id: gid, name: name, target: at};
+  }
+  var g = glossFor(name), gt = g && listById(g.list), target = (gt && !isGen(gt) && g.list !== l.id && gt) || l;
+  var dup = viewItems(target).find(function(i){ return baseKey(i.name) === key; });
   if(dup){
     var patch = {};
     if(dup.done) patch.done = false;
@@ -585,6 +632,11 @@ function addFromText(text){
     if(r.status === 'added'){
       flash(esc(r.name) + ' → ' + catHTML(l, r.cat));
       suggestCheaper(r.id, r.name, l);
+    } else if(r.status === 'gen'){
+      if(r.target){
+        flashText(splitQty(r.name).base + ' → nur ' + listName(r.target.list) + ' (' + r.target.why + ')');
+        showToast(splitQty(r.name).base + ' erscheint nur bei ' + listName(r.target.list) + ', ' + r.target.why + '.', 'Für alle Märkte', function(){ store.updateItem(r.id, {target_list: null}); flashText(splitQty(r.name).base + ' erscheint in allen Märkten.'); }, 8000);
+      } else flashText(splitQty(r.name).base + ' → für alle Märkte');
     } else if(r.status === 'routed'){
       var tl = listById(r.list);
       flash(esc(splitQty(r.name).base) + ' → Liste ' + esc(tl.name) + (r.gloss.product ? ' · ' + esc(r.gloss.product) : ''));
@@ -595,7 +647,8 @@ function addFromText(text){
     else flashText(r.name + ' steht schon auf der Liste' + elsewhere(r) + '.');
   } else {
     var nAdd = res.filter(function(r){ return r.status !== 'dup'; }).length, nRt = res.filter(function(r){ return r.status === 'routed'; }).length;
-    flashText(nAdd + ' Artikel hinzugefügt' + (nRt ? ', ' + nRt + ' davon laut Glossar auf andere Listen.' : '.'));
+    var nAs = res.filter(function(r){ return r.status === 'gen' && r.target; }).length;
+    flashText(nAdd + ' Artikel hinzugefügt' + (nRt ? ', ' + nRt + ' davon laut Glossar auf andere Listen.' : nAs ? ', ' + nAs + ' davon einem Markt zugeordnet.' : '.'));
   }
 }
 /* Ohne Glossar: liegt der letzte bekannte Preis woanders deutlich niedriger, Verschieben anbieten */
@@ -709,7 +762,13 @@ function updateHint(){
   var l = cur(), v = input.value.trim();
   if(!state.authed || state.view !== 'list' || !l || !v){ hint.hidden = true; hint.textContent = ''; return; }
   hint.hidden = false;
-  hint.innerHTML = catHTML(l, clsf(l, v.split(/[,;\n]+/)[0].trim()));
+  var first = v.split(/[,;\n]+/)[0].trim();
+  if(isGen(l)){
+    var at = autoTarget(first);
+    hint.innerHTML = at ? '→ nur ' + esc(listName(at.list)) + ' (' + esc(at.why) + ')' : '→ für alle Märkte';
+    return;
+  }
+  hint.innerHTML = catHTML(l, clsf(l, first));
 }
 function autosize(){
   input.style.height = 'auto';
@@ -745,7 +804,7 @@ function renderHeader(){
   var l = cur(), onList = state.view === 'list' && !!l;
   $('#sumRow').hidden = !onList;
   if(onList){
-    var its = listItems(l), open = its.filter(function(i){ return !i.done; }).length, done = its.length - open;
+    var its = viewItems(l), open = its.filter(function(i){ return !i.done; }).length, done = its.length - open;
     $('#sumText').textContent = its.length ? (open + ' offen · ' + done + ' im Wagen') : 'Noch keine Artikel';
     $('#barFill').style.transform = 'scaleX(' + (its.length ? done / its.length : 0) + ')';
   }
@@ -767,13 +826,15 @@ function itemHTML(i){
   var t = enterAt[i.id];
   if(t === undefined && seen && !seen.has(i.id)){ t = enterAt[i.id] = Date.now(); }
   var entering = t !== undefined && Date.now() - t < 240;
-  var sq = splitQty(i.name), g = glossFor(i.name);
+  var sq = splitQty(i.name), g = glossFor(i.name), subs = [];
+  if(g && g.product) subs.push(g.product);
+  if(renderL && !isGen(renderL) && i.list !== renderL.id) subs.push('aus Allgemein');
   var cls = 'item' + (isDone ? ' done' : '') + (pendingDone[i.id] ? ' checking' : '') + (entering ? ' enter' : '');
   return '<li class="' + cls + '" data-id="' + esc(i.id) + '"' + (entering ? ' data-t="' + t + '"' : '') + '>' +
     '<button class="box-btn" role="checkbox" aria-checked="' + isDone + '" data-act="toggle" data-id="' + esc(i.id) + '" aria-label="' + esc(i.name) + '"><span class="box">' + CHECK + '</span></button>' +
     '<button class="name-btn" data-act="edit" data-id="' + esc(i.id) + '" aria-label="' + esc(i.name) + ' bearbeiten">' +
       (sq.qty ? '<span class="qty">' + esc(sq.qty) + '</span>' : '') + '<span class="nm"><span class="name">' + esc(cap(sq.base)) + '</span>' +
-      (g && g.product ? '<span class="sub">' + esc(g.product) + '</span>' : '') + '</span></button></li>';
+      (subs.length ? '<span class="sub">' + esc(subs.join(' · ')) + '</span>' : '') + '</span></button></li>';
 }
 function emptyNoList(){
   var waiting = !state.loaded;
@@ -781,10 +842,46 @@ function emptyNoList(){
     (waiting ? '' : '<p>Lege eine Liste für deinen Laden an, zum Beispiel Rewe, Baumarkt oder IKEA.</p>' +
       '<div class="chips"><button class="chip" data-act="new-list-open">Neue Liste</button></div>') + '</section>';
 }
+function enterDelays(){
+  var now = Date.now();
+  Array.prototype.forEach.call(main.querySelectorAll('.item[data-t]'), function(el){
+    el.style.animationDelay = (-(now - (+el.dataset.t))) + 'ms';
+  });
+}
+function cartHTML(done){
+  return '<section class="cart"><div class="cart-h"><h2>Im Wagen</h2><span class="count">' + done.length + '</span>' +
+    '<button class="link" data-act="clear-done">Leeren</button></div><ul class="items">' + done.map(function(i){ return itemHTML(i); }).join('') + '</ul></section>';
+}
+function renderGeneral(l){
+  var its = listItems(l), h = '';
+  if(!state.loaded || !its.length){
+    h += '<section class="empty"><h2>' + (state.loaded ? 'Allgemeine Liste' : 'Liste wird geladen …') + '</h2>' +
+      '<p>Tragt hier alles ein, was ihr braucht. Jeder Artikel erscheint in allen Marktlisten. Ist er einem Markt zugeordnet, erscheint er nur dort. Zuordnen kann die App selbst (Glossar und Kassenzettel), oder du stellst es im Artikel ein.</p>' +
+      (state.loaded ? '<div class="chips">' + ['Bananen', 'Hafermilch', 'Spülmittel', 'Brezn'].map(function(x){ return '<button class="chip" data-act="sample" data-text="' + esc(x) + '">' + esc(x) + '</button>'; }).join('') + '</div>' : '') +
+      (state.loaded && !state.dbV6 ? '<p class="tip" style="margin-top:10px">Für die Zuordnung zu einzelnen Märkten fehlt noch ein Datenbank-Update (schema_v6.sql).</p>' : '') + '</section>';
+    main.innerHTML = h;
+    return;
+  }
+  var open = its.filter(function(i){ return !i.done || pendingDone[i.id]; }).sort(byTs);
+  var done = its.filter(function(i){ return i.done && !pendingDone[i.id]; }).sort(byTs);
+  var groups = {};
+  open.forEach(function(i){ var k = i.target && listById(i.target) ? i.target : ''; (groups[k] = groups[k] || []).push(i); });
+  var order = [''].concat(marketLists().map(function(x){ return x.id; })).filter(function(k){ return groups[k] && groups[k].length; });
+  h += order.map(function(k){
+    return '<section class="gsec"><div class="stop-h"><h2>' + (k ? 'Nur ' + esc(listName(k)) : 'Für alle Märkte') + '</h2><span class="count">' + groups[k].length + '</span></div>' +
+      '<ul class="items">' + groups[k].map(function(i){ return itemHTML(i); }).join('') + '</ul></section>';
+  }).join('');
+  if(!order.length) h += '<p class="allset">Alles erledigt.</p>';
+  if(done.length) h += cartHTML(done);
+  main.innerHTML = h;
+  enterDelays();
+}
 function renderList(){
   var l = cur();
+  renderL = l;
   if(!l){ main.innerHTML = emptyNoList(); return; }
-  var its = listItems(l), h = '';
+  if(isGen(l)){ renderGeneral(l); return; }
+  var its = viewItems(l), h = '';
   var waiting = !state.loaded;
   if(waiting || !its.length){
     var samples = ({baumarkt:['Schrauben','Wandfarbe','Dübel','Silikon'], ikea:['Teelichter','Kissen','Box','Köttbullar'], drogerie:['Shampoo','Zahnpasta','Duschgel','Windeln']}[l.tpl]) || ['Bananen','Hafermilch','Spülmittel','Brezn'];
@@ -802,22 +899,22 @@ function renderList(){
   var open = its.filter(function(i){ return !i.done || pendingDone[i.id]; }).sort(byTs);
   var done = its.filter(function(i){ return i.done && !pendingDone[i.id]; }).sort(byTs);
   var by = {};
-  open.forEach(function(i){ var c = effCat(l, i.cat); (by[c] = by[c] || []).push(i); });
+  open.forEach(function(i){ var c = catIn(l, i); (by[c] = by[c] || []).push(i); });
   var stops = stationIds(l).filter(function(id){ return by[id]; });
   if(stops.length){
     h += '<ol class="route">' + stops.map(function(id){
       var no = stationNo(l, id);
       return '<li class="stop"><span class="badge" aria-hidden="true">' + no + '</span>' +
         '<div class="stop-h"><h2><span class="sr">Station ' + no + ': </span>' + esc(stationName(l, id)) + '</h2><span class="count">' + by[id].length + '</span></div>' +
-        '<ul class="items">' + by[id].map(itemHTML).join('') + '</ul></li>';
+        '<ul class="items">' + by[id].map(function(i){ return itemHTML(i); }).join('') + '</ul></li>';
     }).join('') + '<li class="end"><span>Kasse</span></li></ol>';
   } else {
     h += '<p class="allset">Alles im Wagen. Ab zur Kasse.</p>';
   }
-  if(done.length){
-    h += '<section class="cart"><div class="cart-h"><h2>Im Wagen</h2><span class="count">' + done.length + '</span>' +
-      '<button class="link" data-act="clear-done">Leeren</button>' +
-      '</div><ul class="items">' + done.map(itemHTML).join('') + '</ul></section>';
+  if(done.length) h += cartHTML(done);
+  if(!genLists().length && state.loaded && !lsGet('manjo-gen-tip')){
+    h += '<div class="gl-box" style="margin-top:14px"><span><b>Neu:</b> eine allgemeine Liste für alles, was ihr braucht. Die Artikel erscheinen in allen Märkten.</span>' +
+      '<button class="ghost sm" data-act="gen-create">Anlegen</button><button class="link" data-act="gen-tip-off" style="margin-left:0">Nicht jetzt</button></div>';
   }
   if(!state.shop && its.length <= 3 && !lsGet('manjo-tip-swipe')){
     h += '<p class="tip" style="margin-top:12px">Tipp: Wisch einen Artikel nach rechts zum Abhaken, nach links zum Löschen. Ein Tipp auf den Namen öffnet Bearbeiten.</p>';
@@ -836,11 +933,11 @@ function renderMarkets(){
   if(!ol.length) h += emptyNoList();
   ol.forEach(function(l, i){
     var off = hid.indexOf(l.id) >= 0, n = openCount(l), ppl = people(l).length;
-    var meta = n + ' offen · ' + (canManage(l) ? 'von dir' : 'geteilt von ' + who(l.ownerEmail)) + (ppl > 1 ? ' · ' + ppl + ' Personen' : '');
+    var meta = (isGen(l) ? 'Allgemein · ' : '') + n + ' offen · ' + (canManage(l) ? 'von dir' : 'geteilt von ' + who(l.ownerEmail)) + (ppl > 1 ? ' · ' + ppl + ' Personen' : '');
     h += '<div class="mk' + (off ? ' off' : '') + '">' +
       '<button class="mk-main" data-act="open-list" data-id="' + esc(l.id) + '"><b>' + esc(l.name) + '</b><span>' + esc(meta) + (off ? ' · ausgeblendet' : '') + '</span></button>' +
-      '<button class="mk-btn" data-act="mk-up" data-id="' + esc(l.id) + '" aria-label="' + esc(l.name) + ' nach oben"' + (i === 0 ? ' disabled' : '') + '>' + UP + '</button>' +
-      '<button class="mk-btn" data-act="mk-down" data-id="' + esc(l.id) + '" aria-label="' + esc(l.name) + ' nach unten"' + (i === ol.length - 1 ? ' disabled' : '') + '>' + DOWN + '</button>' +
+      '<button class="mk-btn" data-act="mk-up" data-id="' + esc(l.id) + '" aria-label="' + esc(l.name) + ' nach oben"' + (i === 0 || isGen(l) || isGen(ol[i - 1]) ? ' disabled' : '') + '>' + UP + '</button>' +
+      '<button class="mk-btn" data-act="mk-down" data-id="' + esc(l.id) + '" aria-label="' + esc(l.name) + ' nach unten"' + (i === ol.length - 1 || isGen(l) ? ' disabled' : '') + '>' + DOWN + '</button>' +
       '<button class="mk-btn" data-act="mk-vis" data-id="' + esc(l.id) + '" aria-pressed="' + !off + '" aria-label="' + esc(l.name) + (off ? ' in den Tabs zeigen' : ' in den Tabs ausblenden') + '">' + (off ? EYE_OFF : EYE) + '</button></div>';
   });
   if(ol.length) h += glossaryHTML();
@@ -998,6 +1095,16 @@ function renderSettings(){
   var l = cur(), h = '';
   if(!l){ main.innerHTML = emptyNoList(); return; }
   var manage = canManage(l);
+  if(isGen(l)){
+    h += '<section class="set"><h3>Liste</h3><label class="sr" for="listNameInput">Name der Liste</label>' +
+      '<input class="field" id="listNameInput" value="' + esc(l.name) + '" maxlength="40" autocomplete="off"' + (manage ? '' : ' disabled') + '>' +
+      '<p class="tip" style="margin-top:6px">Allgemeine Liste ohne Route. Ihre Artikel erscheinen in den Marktlisten und werden dort nach der jeweiligen Route einsortiert.</p></section>';
+    h += '<section class="set"><h3>Personen</h3><p class="tip">' + people(l).map(function(p){ return esc(who(p)); }).join(', ') + '. Einladen und Freigaben findest du unter Account.</p>' +
+      '<button class="ghost" data-act="nav" data-view="account">Zu den Personen</button></section>';
+    if(manage) h += '<section class="set"><button class="ghost warn" data-act="del-list">' + (state.confirmDel ? 'Wirklich löschen? Mit allen Artikeln' : 'Liste „' + esc(l.name) + '“ löschen') + '</button></section>';
+    main.innerHTML = h;
+    return;
+  }
   var dis = manage ? '' : ' disabled';
   var counts = {};
   listItems(l).forEach(function(i){ if(!i.done){ var c = effCat(l, i.cat); counts[c] = (counts[c] || 0) + 1; } });
@@ -1080,28 +1187,31 @@ function sheetContent(){
   if(s.type === 'item'){
     var it = findItem(s.id), il = it && listById(it.list);
     if(!it || !il) return null;
-    var curCat = effCat(il, it.cat);
-    return {title: 'Artikel bearbeiten', sub: 'Name und Menge ändern, zum Beispiel „2 Milch“, oder eine andere Station wählen. Die App merkt sich die Station für diesen Artikel.',
+    var ctxL = listById(s.ctx) || il, gen = isGen(il);
+    var stL = gen ? (isGen(ctxL) ? null : ctxL) : il;
+    var curCat = stL ? catIn(stL, it) : null;
+    return {title: 'Artikel bearbeiten', sub: gen ? 'Artikel aus der allgemeinen Liste. Name, Menge und Zuordnung gelten überall.' : 'Name und Menge ändern, zum Beispiel „2 Milch“, oder eine andere Station wählen. Die App merkt sich die Station für diesen Artikel.',
       body: '<form id="itemForm" class="inline-form" autocomplete="off"><label class="sr" for="itemName">Name</label>' +
         '<input class="field" id="itemName" maxlength="120" value="' + esc(it.name) + '"><button class="ibtn" type="submit" aria-label="Name speichern">' + TICK + '</button></form>' +
+        (gen ? assignHTML(it) : '') +
         itemGlossHTML(it) +
         '<h3 class="rc-h">Preise</h3>' + pricesHTML(pricesOf(it.name)) +
-        '<h3 class="rc-h">Station</h3>' +
-        '<ul class="cat-list">' + il.stations.map(function(st, idx){
+        (stL ? '<h3 class="rc-h">Station' + (gen ? ' bei ' + esc(stL.name) : '') + '</h3>' +
+        '<ul class="cat-list">' + stL.stations.map(function(st, idx){
           var c = st.id === curCat;
           return '<li><button class="cat-btn" data-act="cat" data-cat="' + esc(st.id) + '"' + (c ? ' aria-current="true"' : '') + '>' +
             '<span class="badge sm" aria-hidden="true">' + (idx + 1) + '</span><span class="t">' + esc(st.name) + '</span>' + (c ? TICK : '') + '</button></li>';
-        }).join('') + '</ul><button class="danger" data-act="delete">Artikel löschen</button>'};
+        }).join('') + '</ul>' : '') + '<button class="danger" data-act="delete">Artikel löschen</button>'};
   }
   if(s.type === 'gloss'){
     return {title: s.id ? 'Glossar-Eintrag' : 'Neuer Glossar-Eintrag', sub: 'Lege fest, welches Produkt mit einem Begriff gemeint ist und wo ihr es kauft. Tippt jemand den Begriff in eine Liste, landet er automatisch auf der Liste dieses Markts.',
       body: glossBody(s)};
   }
   if(s.type === 'new'){
-    return {title: 'Neuer Markt', sub: 'Die Vorlage legt Stationen und Stichwörter an. Alles lässt sich später ändern.',
+    return {title: 'Neue Liste', sub: 'Die Vorlage legt Stationen und Stichwörter an. Alles lässt sich später ändern.',
       body: '<form id="newListForm" autocomplete="off"><div class="tpls">' + TPL_ORDER.map(function(t){
         return '<button type="button" class="tpl-btn" data-act="tpl" data-tpl="' + t + '" aria-pressed="' + (s.tpl === t) + '"><b>' + esc(TPLS[t].name) + '</b><span>' + esc(TPLS[t].desc) + '</span></button>';
-      }).join('') + '</div><label class="sr" for="newListName">Name der Liste</label>' +
+      }).join('') + (genLists().length ? '' : '<button type="button" class="tpl-btn" data-act="tpl" data-tpl="' + GEN + '" aria-pressed="' + (s.tpl === GEN) + '"><b>Allgemein</b><span>Eine Liste für alle Märkte, ohne Route</span></button>') + '</div><label class="sr" for="newListName">Name der Liste</label>' +
       '<input class="field" id="newListName" maxlength="40" value="' + esc(s.name) + '" placeholder="Name, z. B. Rewe Spinnerei">' +
       '<button class="sheet-btn primary" type="submit" style="margin-top:8px">Anlegen</button></form>'};
   }
@@ -1124,6 +1234,11 @@ function sheetContent(){
   }
   return null;
 }
+function assignHTML(it){
+  var curT = it.target && listById(it.target) ? it.target : '';
+  return '<h3 class="rc-h">Erscheint in</h3>' + chipsHTML('assign', [['', 'Allen Märkten']].concat(marketLists().map(function(x){ return [x.id, 'Nur ' + x.name]; })), curT) +
+    (state.dbV6 ? '' : '<p class="tip">Für die Zuordnung fehlt noch ein Datenbank-Update (schema_v6.sql).</p>');
+}
 function itemGlossHTML(it){
   var g = glossFor(it.name);
   if(g) return '<div class="gl-box"><span>Im Glossar: <b>' + esc(g.product || g.name) + '</b>, kaufen bei <b>' + esc(listName(g.list)) + '</b></span>' +
@@ -1131,7 +1246,7 @@ function itemGlossHTML(it){
   return '<div class="gl-box"><span>Immer dasselbe Produkt oder derselbe Markt?</span><button class="ghost sm" data-act="gloss-item">Im Glossar festlegen</button></div>';
 }
 function glossBody(s){
-  var ol = orderedLists();
+  var ol = marketLists();
   var h = '<form id="glossForm" autocomplete="off">' +
     '<label class="field-l">Begriff auf der Liste<input class="field" id="gName" maxlength="60" value="' + esc(s.name) + '" placeholder="z. B. Hafermilch"></label>' +
     '<label class="field-l" style="margin-top:8px">Genaues Produkt<input class="field" id="gProduct" maxlength="120" value="' + esc(s.product) + '" placeholder="z. B. NoMilk Hafer 3,5 % Fett"></label>' +
@@ -1146,10 +1261,16 @@ function glossBody(s){
     (s.id ? '<button class="danger" data-act="gloss-del" data-id="' + esc(s.id) + '">Aus dem Glossar löschen</button>' : '');
   return h;
 }
+function glossDefaultList(it){
+  var ml = marketLists();
+  if(it){ var il = listById(it.list); if(il && !isGen(il)) return il.id; if(it.target && listById(it.target)) return it.target; }
+  var c = cur();
+  return c && !isGen(c) ? c.id : (ml[0] ? ml[0].id : '');
+}
 function openGloss(entry, from){
   var it = from ? findItem(from) : null;
   var s = entry ? {type: 'gloss', id: entry.id, name: entry.name, product: entry.product, list: entry.list, terms: entry.terms, from: from || null}
-                : {type: 'gloss', id: null, name: it ? cap(splitQty(it.name).base) : '', product: '', list: it ? it.list : (state.listId || ''), terms: '', from: from || null};
+                : {type: 'gloss', id: null, name: it ? cap(splitQty(it.name).base) : '', product: '', list: glossDefaultList(it), terms: '', from: from || null};
   openSheet(s, null, entry || it ? '#gProduct' : '#gName');
 }
 function saveGloss(){
@@ -1172,7 +1293,8 @@ function saveGloss(){
     var msg = 'Glossar: ' + name + (product ? ' = ' + product : '') + ', kaufen bei ' + listName(list) + '.';
     closeSheet();
     var it = from && findItem(from);
-    if(it && it.list !== list){ moveItem(it.id, list); }
+    if(it && isGen(listById(it.list))){ if(state.dbV6 && it.target !== list) store.updateItem(it.id, {target_list: list}); }
+    else if(it && it.list !== list){ moveItem(it.id, list); }
     flashText(msg);
   });
 }
@@ -1184,7 +1306,7 @@ function rcpBody(r){
     '<label class="field-l">Betrag gesamt<input class="field amount" id="rcTotal" inputmode="decimal" value="' + (r.total ? money2(r.total) : '') + '" placeholder="0,00"></label>' +
     '<label class="field-l" style="margin-top:8px">Laden oder Wofür<input class="field" id="rcDesc" maxlength="120" value="' + esc(r.desc) + '" placeholder="' + (r.mode === 'photo' ? 'Kassenzettel' : 'z. B. Wocheneinkauf') + '"></label>' +
     '<div class="two"><label class="field-l">Datum<input class="field" id="rcDate" type="date" value="' + esc(r.date) + '"></label>' +
-    '<label class="field-l">Markt<select class="field" id="rcList">' + orderedLists().map(function(x){
+    '<label class="field-l">Markt<select class="field" id="rcList">' + orderedLists().filter(function(x){ return !isGen(x) || x.id === r.list; }).map(function(x){
       return '<option value="' + esc(x.id) + '"' + (x.id === r.list ? ' selected' : '') + '>' + esc(x.name) + '</option>';
     }).join('') + '</select></label></div>' +
     '<label class="field-l" style="margin-top:8px">Bezahlt von<select class="field" id="rcPayer">' + ppl.map(function(p){
@@ -1238,7 +1360,7 @@ function readRcp(){
 }
 function rcpMatch(r){
   var l = listById(r.list);
-  var open = l ? listItems(l).filter(function(i){ return !i.done; }) : [];
+  var open = l ? viewItems(l).filter(function(i){ return !i.done; }) : [];
   r.match = r.mode === 'photo' ? matchReceipt(r.lines.map(function(x){ return x.n; }), open, norm) : [];
   r.matchOn = {};
   r.match.forEach(function(id){ r.matchOn[id] = true; });
@@ -1264,6 +1386,7 @@ function setRcpList(id){
 }
 function newRcp(mode, listId){
   var l = listById(listId) || cur() || orderedLists()[0];
+  if(l && isGen(l)) l = marketLists()[0] || l;
   if(!l) return null;
   return {mode: mode, id: null, list: l.id, total: 0, desc: '', date: todayISO(), payer: state.me.email, parts: people(l).slice(), lines: [], match: [], matchOn: {}};
 }
@@ -1373,15 +1496,21 @@ function updateImport(){
   var lines = ta.value.split(/[\n,;]+/).map(function(s){ return s.trim().replace(/\s+/g, ' '); }).filter(Boolean);
   var seenN = {}, groups = {}, dup = 0, n = 0;
   var have = {};
-  listItems(l).forEach(function(i){ have[baseKey(i.name)] = 1; });
+  viewItems(l).forEach(function(i){ have[baseKey(i.name)] = 1; });
   lines.forEach(function(raw){
     var name = cap(raw), key = baseKey(name);
     if(seenN[key] || have[key]){ dup++; return; }
     seenN[key] = 1; n++;
-    var c = clsf(l, name);
+    var c = isGen(l) ? ((autoTarget(name) || {}).list || '') : clsf(l, name);
     (groups[c] = groups[c] || []).push(name);
   });
   var html = '';
+  if(isGen(l)){
+    [''].concat(marketLists().map(function(x){ return x.id; })).forEach(function(k){
+      if(groups[k]) html += '<div class="grp"><div class="grp-h"><b>' + (k ? 'Nur ' + esc(listName(k)) : 'Für alle Märkte') + '</b><span>' + groups[k].length + '</span></div><p>' + groups[k].map(esc).join(', ') + '</p></div>';
+    });
+    groups = {};
+  }
   stationIds(l).forEach(function(id){
     if(!groups[id]) return;
     html += '<div class="grp"><div class="grp-h">' + badgeHTML(stationNo(l, id)) + '<b>' + esc(stationName(l, id)) + '</b><span>' + groups[id].length + '</span></div><p>' + groups[id].map(esc).join(', ') + '</p></div>';
@@ -1601,7 +1730,7 @@ document.addEventListener('click', function(e){
     var s = state.sheet;
     if(s && s.type === 'new'){
       s.tpl = b.dataset.tpl;
-      s.name = s.tpl === 'eigen' ? 'Neue Liste' : TPLS[s.tpl].name;
+      s.name = s.tpl === 'eigen' ? 'Neue Liste' : s.tpl === GEN ? 'Allgemein' : TPLS[s.tpl].name;
       rebuildSheet();
     }
   } else if(act === 'import'){
@@ -1684,15 +1813,34 @@ document.addEventListener('click', function(e){
       store.updateItem(id, {done: !it.done});
     }
   } else if(act === 'edit' && it){
-    openSheet({type:'item', id: id}, '[data-act="edit"][data-id="' + sel(id) + '"]', '#itemName');
+    openSheet({type:'item', id: id, ctx: state.listId}, '[data-act="edit"][data-id="' + sel(id) + '"]', '#itemName');
+  } else if(act === 'assign'){
+    var ai = state.sheet && findItem(state.sheet.id);
+    if(!ai) return;
+    if(!state.dbV6){ flashText('Für die Zuordnung fehlt ein Datenbank-Update: schema_v6.sql in Supabase ausführen.'); return; }
+    store.updateItem(ai.id, {target_list: id || null});
+    flashText(splitQty(ai.name).base + (id ? ' erscheint nur bei ' + listName(id) + '.' : ' erscheint in allen Märkten.'));
+  } else if(act === 'gen-create'){
+    lsSet('manjo-gen-tip', '1');
+    store.createList('Allgemein', GEN).then(function(nid){
+      switchList(nid);
+      setView('list');
+      flashText('Allgemeine Liste angelegt. Was du hier einträgst, erscheint in allen Märkten.');
+    }).catch(onWriteError);
+  } else if(act === 'gen-tip-off'){
+    lsSet('manjo-gen-tip', '1');
+    render();
   } else if(act === 'close'){
     closeSheet();
   } else if(act === 'cat'){
-    var ci = state.sheet && findItem(state.sheet.id), cl = ci && listById(ci.list), c = b.dataset.cat;
-    if(!ci || !cl) return;
+    var ci = state.sheet && findItem(state.sheet.id), c = b.dataset.cat;
+    if(!ci) return;
+    var ownL = listById(ci.list), ctxL3 = listById(state.sheet.ctx);
+    var cl = ownL && !isGen(ownL) ? ownL : (ctxL3 && !isGen(ctxL3) ? ctxL3 : null);
+    if(!cl) return;
     if(!saveItemName(ci)) return;
-    if(c !== effCat(cl, ci.cat)){
-      store.updateItem(ci.id, {cat: c});
+    if(c !== catIn(cl, ci)){
+      if(ci.list === cl.id) store.updateItem(ci.id, {cat: c});
       learn(cl, ci.name, c);
       flash(esc(splitQty(ci.name).base) + ' → ' + catHTML(cl, c));
     }
@@ -1728,7 +1876,7 @@ document.addEventListener('click', function(e){
   } else if(act === 'sample'){
     addFromText(b.dataset.text);
   } else if(act === 'clear-done' && l){
-    var doneIds = listItems(l).filter(function(i){ return i.done; }).map(function(i){ return i.id; });
+    var doneIds = viewItems(l).filter(function(i){ return i.done; }).map(function(i){ return i.id; });
     softDelete(doneIds, doneIds.length + (doneIds.length === 1 ? ' Artikel' : ' Artikel') + ' aus dem Wagen entfernt');
   } else if(act === 'rc-add'){
     var rl = state.rcp && listById(state.rcp.list);
@@ -1855,7 +2003,7 @@ document.addEventListener('submit', function(e){
     e.preventDefault();
     var s = state.sheet;
     if(!s || s.type !== 'new' || !state.authed) return;
-    var name = (s.name || '').trim().replace(/\s+/g, ' ') || (s.tpl === 'eigen' ? 'Neue Liste' : TPLS[s.tpl].name);
+    var name = (s.name || '').trim().replace(/\s+/g, ' ') || (s.tpl === 'eigen' ? 'Neue Liste' : s.tpl === GEN ? 'Allgemein' : TPLS[s.tpl].name);
     store.createList(name, s.tpl).then(function(id){
       switchList(id);
       state.view = 'list';
