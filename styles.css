@@ -231,7 +231,7 @@ button.exm:active b{color:var(--ink-2)}
 .nb:active svg{transform:scale(.85)}
 
 /* Blatt von unten */
-.overlay{position:fixed;inset:0;z-index:20;display:flex;align-items:flex-end;justify-content:center;background:var(--scrim);animation:fadeIn 180ms ease-out both}
+.overlay{position:fixed;left:0;right:0;top:var(--vv-top,0px);height:var(--vv-h,100%);z-index:20;display:flex;align-items:flex-end;justify-content:center;background:var(--scrim);animation:fadeIn 180ms ease-out both}
 .sheet{width:100%;max-width:560px;max-height:88%;display:flex;flex-direction:column;background:var(--surface);border-radius:28px 28px 0 0;animation:rise 260ms var(--ease-drawer) both;
   padding:10px max(14px,env(safe-area-inset-right,0px)) calc(10px + env(safe-area-inset-bottom,0px)) max(14px,env(safe-area-inset-left,0px))}
 .overlay.out{animation:fadeOut 150ms ease-out both}
@@ -245,7 +245,7 @@ button.exm:active b{color:var(--ink-2)}
 .close{flex:none;display:grid;place-items:center;width:44px;height:44px;border:0;border-radius:50%;background:none;transition:transform 160ms var(--ease-out)}
 .close:active{transform:scale(.92)}
 .sheet-sub{margin:0 0 6px;font-size:13px;color:var(--ink-2)}
-.sheet-body{overflow-y:auto;min-height:0;display:grid;gap:8px}
+.sheet-body{overflow-y:auto;min-height:0;display:grid;gap:8px;padding:4px;margin:-4px}
 .cat-list{list-style:none;margin:0 0 4px;padding:0}
 .cat-btn{display:flex;align-items:center;gap:10px;width:100%;min-height:44px;padding:0;border:0;border-top:1px solid var(--line);background:none;text-align:left;font-size:15px}
 .cat-btn:active{background:var(--line)}
@@ -373,3 +373,7 @@ input[type="checkbox"]::after{content:"";width:10px;height:5px;border:solid var(
 input[type="checkbox"]:checked{background:var(--accent);border-color:var(--accent)}
 input[type="checkbox"]:checked::after{transform:rotate(-45deg) translate(1px,-1px) scale(1)}
 input[type="checkbox"]:disabled{opacity:.5}
+
+/* Mit Tastatur: Fenster oben andocken, damit nichts verdeckt wird */
+.overlay.kb{align-items:flex-start}
+.overlay.kb .sheet{max-height:100%;border-radius:0 0 28px 28px;animation:none;padding-top:max(14px,env(safe-area-inset-top,0px))}
