@@ -16,7 +16,7 @@ var EYE = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="c
 var EYE_OFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18M10.6 5.1A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.6 0 3-.4 4.3-1"/></svg>';
 var NAV_INDEX = {list:0, markets:1, bills:2, settings:3, account:4};
 var DB_UPDATE_CODES = ['42P01', '42703', 'PGRST204', 'PGRST205'];
-var APP_VERSION = '2026-10-24.1';
+var APP_VERSION = '2026-10-24.2';
 var GEN = 'allgemein';
 var LS_LOG = 'manjo-log';
 /* Kleines Protokoll auf dem Gerät: hilft, Fehler zu finden, die man auf dem Handy nicht sieht */
