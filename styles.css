@@ -1,23 +1,23 @@
 :root{
-  --bg:#edf1ef; --surface:#f8faf9; --ink:#13211d; --ink-2:#46564f; --line:#cfd9d4; --rail:#9fb1aa;
-  --accent:#ffd23f; --accent-2:#f59e0b; --on-accent:#13211d; --danger:#b3261e; --ok:#1f8a5b; --warn:#b26a00;
+  --bg:#ebebea; --surface:#f7f7f6; --ink:#161b18; --ink-2:#4b524e; --line:#d4d5d3; --rail:#a2a7a4;
+  --accent:#17432f; --accent-2:#2f6a50; --on-accent:#ffffff; --danger:#b3261e; --ok:#1f8a5b; --warn:#b26a00;
   --scrim:rgba(10,20,17,.5); --lift:0 12px 28px rgba(19,33,29,.22);
-  --nav:rgba(70,80,36,.88); --nav-ink:#f7f0cc;
+  --nav:rgba(22,44,35,.94); --nav-ink:#e4efe8;
   --ease-out:cubic-bezier(.23,1,.32,1); --ease-drawer:cubic-bezier(.32,.72,0,1);
   --f-display:'Archivo','Arial Narrow',Arial,sans-serif;
   --f-body:'Hanken Grotesk',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --bg:#0f1815; --surface:#17231f; --ink:#eaf1ee; --ink-2:#9db0a9; --line:#2b3c36; --rail:#3f544d;
+    --bg:#111312; --surface:#1a1d1b; --ink:#eaeeec; --ink-2:#9aa39e; --line:#2a2e2c; --rail:#464c48; --accent:#6cc79b; --accent-2:#8fd6b2; --on-accent:#08140e;
     --danger:#ff8f86; --ok:#4cd69a; --warn:#ffb74d; --scrim:rgba(0,0,0,.6); --lift:0 12px 28px rgba(0,0,0,.5);
-    --nav:rgba(34,42,20,.9); --nav-ink:#f7f0cc; color-scheme:dark;
+    --nav:rgba(24,38,31,.95); --nav-ink:#e4efe8; color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
-  --bg:#0f1815; --surface:#17231f; --ink:#eaf1ee; --ink-2:#9db0a9; --line:#2b3c36; --rail:#3f544d;
+  --bg:#111312; --surface:#1a1d1b; --ink:#eaeeec; --ink-2:#9aa39e; --line:#2a2e2c; --rail:#464c48; --accent:#6cc79b; --accent-2:#8fd6b2; --on-accent:#08140e;
   --danger:#ff8f86; --ok:#4cd69a; --warn:#ffb74d; --scrim:rgba(0,0,0,.6); --lift:0 12px 28px rgba(0,0,0,.5);
-  --nav:rgba(34,42,20,.9); --nav-ink:#f7f0cc; color-scheme:dark;
+  --nav:rgba(24,38,31,.95); --nav-ink:#e4efe8; color-scheme:dark;
 }
 *{box-sizing:border-box}
 [hidden]{display:none!important}
@@ -59,12 +59,12 @@ h2{font-family:var(--f-display);font-stretch:78%;font-weight:700;font-size:14px;
 .tab{flex:none;display:inline-flex;align-items:center;gap:8px;min-height:36px;padding:0 8px 0 14px;border-radius:999px;border:1.5px solid var(--line);background:none;color:var(--ink-2);font-weight:600;font-size:14px;white-space:nowrap;transition:transform 160ms var(--ease-out),background-color 160ms ease,color 160ms ease}
 .tab:active{transform:scale(.97)}
 .tab .tn{max-width:150px;overflow:hidden;text-overflow:ellipsis}
-.tab[aria-selected="true"]{background:var(--ink);border-color:var(--ink);color:var(--bg)}
+.tab[aria-selected="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 .tc{min-width:24px;height:22px;padding:0 6px;border-radius:11px;background:var(--line);color:var(--ink);display:grid;place-items:center;font-size:12px;font-weight:700;font-variant-numeric:tabular-nums}
-.tab[aria-selected="true"] .tc{background:var(--accent);color:var(--on-accent)}
+.tab[aria-selected="true"] .tc{background:color-mix(in srgb,var(--on-accent) 20%,transparent);color:var(--on-accent)}
 .sum{display:flex;align-items:center;gap:10px;min-width:0;padding-bottom:2px;font-size:12.5px;color:var(--ink-2);font-variant-numeric:tabular-nums}
 .bar{flex:1;min-width:20px;height:3px;border-radius:2px;background:var(--line);overflow:hidden}
-.bar i{display:block;height:100%;width:100%;background:var(--ink);transform:scaleX(0);transform-origin:left;transition:transform .3s var(--ease-out)}
+.bar i{display:block;height:100%;width:100%;background:var(--accent);transform:scaleX(0);transform-origin:left;transition:transform .3s var(--ease-out)}
 
 /* Hauptbereich */
 main{overflow-y:auto;overscroll-behavior:contain;padding:8px 0 14px;min-width:0;outline:none}
@@ -101,7 +101,7 @@ main.dragging,main.dragging *{user-select:none;-webkit-user-select:none;cursor:g
 .box{flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;border:2px solid var(--ink-2);transition:transform 160ms var(--ease-out),background-color 160ms ease,border-color 160ms ease}
 .box svg{opacity:0}
 .box-btn:active .box{transform:scale(.86)}
-.box-btn[aria-checked="true"] .box{background:var(--ink-2);border-color:var(--ink-2);color:var(--bg)}
+.box-btn[aria-checked="true"] .box{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
 .box-btn[aria-checked="true"] .box svg{opacity:1}
 .name-btn:active .name{color:var(--ink-2)}
 .item.checking .box svg{animation:tick 220ms var(--ease-out) both}
@@ -221,12 +221,12 @@ button.exm:active b{color:var(--ink-2)}
 .add:disabled,.ibtn:disabled{opacity:.5}
 .nav{margin:10px auto calc(14px + env(safe-area-inset-bottom,0px));width:100%;max-width:420px;border-radius:999px;padding:5px;background:var(--nav);
   backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%);
-  box-shadow:0 10px 26px rgba(40,45,15,.35),inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.07)}
+  box-shadow:0 10px 26px rgba(8,24,16,.32),inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.07)}
 .navin{position:relative;display:flex}
 .slot{position:absolute;top:0;left:0;width:20%;height:100%;display:grid;place-items:center;pointer-events:none;transition:transform 340ms var(--ease-out)}
-.sunc{width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 38% 34%,#FFF6BE 0%,#FFD23F 42%,#F59E0B 80%,#E0701A 100%);box-shadow:0 0 14px 2px rgba(255,190,50,.5)}
+.sunc{width:44px;height:44px;border-radius:50%;background:radial-gradient(circle at 38% 34%,#f1f7f3 0%,#c3dccb 45%,#86b79c 100%);box-shadow:0 0 9px 1px rgba(140,195,162,.26)}
 .nb{position:relative;z-index:1;flex:1;height:48px;display:grid;place-items:center;border:0;background:none;color:var(--nav-ink);transition:color 220ms ease}
-.nb[aria-current="true"]{color:#1f2410}
+.nb[aria-current="true"]{color:#10261b}
 .nb svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round;transition:transform 140ms ease-out}
 .nb:active svg{transform:scale(.85)}
 
